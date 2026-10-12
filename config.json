@@ -1,0 +1,10 @@
+{
+  "port": "COM12",
+  "baud": 115200,
+  "poll_sec": 8,
+  "auto_detect_port": true,
+  "web_host": "127.0.0.1",
+  "web_port": 8666,
+  "server_engine": "auto",
+  "access_token": ""
+}

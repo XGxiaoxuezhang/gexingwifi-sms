@@ -1,0 +1,16 @@
+# 运行时数据（含短信内容，注意隐私，不入库）
+logs/
+sms_web/data.json
+sms_web/send_queue.json
+sms_web/send_result.json
+sms_web/delete_queue.json
+sms_web/read_marks.json
+sms_web/contacts.json
+
+# 临时文件
+*.tmp
+*.old
+
+# Python
+__pycache__/
+*.pyc

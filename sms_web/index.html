@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>随身WiFi 短信</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; display:flex; flex-direction:column; }
+  .header { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid #1e293b; background:#0b1220; }
+  .header h1 { font-size:18px; font-weight:600; flex:1; }
+  .badge { background:#059669; color:#fff; padding:2px 12px; border-radius:999px; font-size:12px; }
+  .badge.off { background:#475569; }
+  .stats { color:#64748b; font-size:12px; padding:6px 20px; border-bottom:1px solid #1e293b; }
+
+  /* 列表视图 */
+  #list-view { flex:1; overflow-y:auto; }
+  .item { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid #1e293b; cursor:pointer; transition:background .15s; }
+  .item:hover { background:#1e293b; }
+  .item.new { background:#172c4a; }
+  .avatar { width:40px; height:40px; border-radius:50%; background:#1d4ed8; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; flex-shrink:0; }
+  .item .mid { flex:1; min-width:0; }
+  .item .from { font-size:15px; font-weight:600; }
+  .item.new .from { color:#7dd3fc; }
+  .item .num { font-size:12px; color:#64748b; font-weight:400; margin-left:6px; }
+  .item .preview { font-size:13px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .item .time { font-size:12px; color:#64748b; flex-shrink:0; }
+  .empty { color:#64748b; text-align:center; padding:80px 0; }
+
+  /* 详情视图 */
+  #detail-view { display:none; flex-direction:column; flex:1; min-height:0; }
+  .detail-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #1e293b; background:#0b1220; }
+  .back { background:none; border:none; color:#7dd3fc; font-size:16px; cursor:pointer; padding:6px; }
+  .detail-head .meta { flex:1; min-width:0; }
+  .detail-head .dfrom { font-size:16px; font-weight:600; }
+  .detail-head .dtime { font-size:12px; color:#64748b; margin-top:2px; }
+  .detail-body { flex:1; overflow-y:auto; padding:24px 20px; line-height:1.9; font-size:16px; white-space:pre-wrap; word-break:break-all; }
+  .reply { border-top:1px solid #1e293b; padding:12px 16px; background:#0b1220; }
+  .reply textarea { width:100%; height:72px; background:#1e293b; border:1px solid #334155; border-radius:10px; color:#e2e8f0; font-size:14px; padding:10px; resize:none; font-family:inherit; }
+  .reply textarea:focus { outline:none; border-color:#38bdf8; }
+  .reply-bar { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  .reply-bar .status { flex:1; font-size:12px; color:#94a3b8; }
+  .send-btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:9px 24px; font-size:14px; cursor:pointer; }
+  .send-btn:disabled { background:#334155; color:#94a3b8; cursor:not-allowed; }
+  .send-btn.ok { background:#059669; }
+  .send-btn.fail { background:#dc2626; }
+  .sound { border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
+  .sound.on { background:#059669; color:#fff; }
+  .sound.off { background:#334155; color:#94a3b8; }
+  .act { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
+  .act:hover { background:#475569; }
+  .copy-btn { background:none; border:1px solid #334155; color:#7dd3fc; border-radius:8px; padding:5px 12px; font-size:12px; cursor:pointer; flex-shrink:0; }
+  .copy-btn:hover { border-color:#38bdf8; }
+  .copy-btn.danger { color:#fca5a5; border-color:#4c1d1d; }
+  .copy-btn.danger:hover { border-color:#dc2626; }
+  .char-count { font-size:12px; color:#64748b; }
+  .tip { color:#64748b; font-size:12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>随身WiFi 短信</h1>
+  <button id="btn-read-all" class="act">全部已读</button>
+  <button id="btn-sound" class="sound off">语音：关</button>
+  <span class="badge off" id="live">连接中</span>
+</div>
+<div class="stats">共 <b id="count">0</b> 条 · 上次刷新 <span id="updated">-</span> · <span class="tip" id="conn-tip">新短信语音提醒用右上角按钮开关</span></div>
+
+<div id="list-view">
+  <div id="list"></div>
+</div>
+
+<div id="detail-view">
+  <div class="detail-head">
+    <button class="back" id="btn-back">← 返回</button>
+    <div class="meta">
+      <div class="dfrom" id="d-from"></div>
+      <div class="dtime" id="d-time"></div>
+    </div>
+    <button class="copy-btn" id="btn-contact">备注</button>
+    <button class="copy-btn" id="btn-copy">复制</button>
+    <button class="copy-btn danger" id="btn-delete">删除</button>
+  </div>
+  <div class="detail-body" id="d-body"></div>
+  <div class="reply">
+    <textarea id="reply-input" placeholder="输入回复内容..."></textarea>
+    <div class="reply-bar">
+      <span class="status" id="send-status"></span>
+      <span class="char-count" id="char-count">0/70</span>
+      <button class="send-btn" id="btn-send">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const listEl = document.getElementById('list');
+const listView = document.getElementById('list-view');
+const detailView = document.getElementById('detail-view');
+const countEl = document.getElementById('count');
+const updatedEl = document.getElementById('updated');
+const dFrom = document.getElementById('d-from');
+const dTime = document.getElementById('d-time');
+const dBody = document.getElementById('d-body');
+const replyInput = document.getElementById('reply-input');
+const sendStatus = document.getElementById('send-status');
+const sendBtn = document.getElementById('btn-send');
+const charCountEl = document.getElementById('char-count');
+const copyBtn = document.getElementById('btn-copy');
+const readAllBtn = document.getElementById('btn-read-all');
+const contactBtn = document.getElementById('btn-contact');
+const deleteBtn = document.getElementById('btn-delete');
+const liveEl = document.getElementById('live');
+const connTip = document.getElementById('conn-tip');
+const soundBtn = document.getElementById('btn-sound');
+
+// ---------- 访问令牌（局域网访问时校验） ----------
+let token = new URLSearchParams(location.search).get('token') || localStorage.getItem('wifi_sms_token') || '';
+if (token) localStorage.setItem('wifi_sms_token', token);
+let tokenAsked = false;
+
+function api(path) {
+  if (!token) return path;
+  return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+}
+
+function askToken() {
+  if (tokenAsked) return;
+  tokenAsked = true;
+  const t = prompt('该服务启用了访问令牌，请输入：');
+  if (t && t.trim()) {
+    localStorage.setItem('wifi_sms_token', t.trim());
+    location.reload();
+  }
+}
+
+let smsList = [];
+let contacts = {};
+let knownKeys = new Set();
+let currentDetail = null;
+let sendingId = null;
+let audioCtx = null;
+let soundOn = false;
+let readLocally = new Set();   // 本地已读集合，避免刷新期间高亮闪烁
+
+// ---------- 提示音 ----------
+// 新短信播报文案：想改内容就改这一行
+const NEW_SMS_TEXT = '您有新的短信，请注意查收';
+
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+}
+
+// ---------- 语音播报（浏览器内置 TTS，不需要音频文件） ----------
+let zhVoice = null;
+
+function pickChineseVoice() {
+  if (!('speechSynthesis' in window)) return null;
+  if (zhVoice) return zhVoice;
+  const voices = speechSynthesis.getVoices() || [];
+  zhVoice = voices.find(v => /^zh[-_]?CN$/i.test(v.lang))
+         || voices.find(v => /^zh/i.test(v.lang))
+         || null;
+  return zhVoice;
+}
+
+if ('speechSynthesis' in window) {
+  pickChineseVoice();
+  // 语音列表是异步加载的，加载完成后重新挑一次
+  speechSynthesis.onvoiceschanged = () => { zhVoice = null; pickChineseVoice(); };
+}
+
+// 播报一句，返回是否已发起（系统没有中文语音时返回 false）
+function speak(text) {
+  if (!('speechSynthesis' in window)) return false;
+  const v = pickChineseVoice();
+  if (!v) return false;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    u.voice = v;
+    u.rate = 1;
+    u.volume = 1;
+    speechSynthesis.cancel();   // 连续来短信时打断上一条，避免排队越积越多
+    speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+
+// 提示音（系统没有中文语音时的兜底）
+function beep() {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    o.start(); o.stop(audioCtx.currentTime + 0.25);
+  } catch (e) {}
+}
+
+// 来新短信：优先语音播报，否则退回提示音
+function alertNewSMS() {
+  if (!soundOn) return;
+  ensureAudio();
+  if (!speak(NEW_SMS_TEXT)) { beep(); setTimeout(beep, 260); }
+}
+
+soundBtn.addEventListener('click', () => {
+  soundOn = !soundOn;
+  if (soundOn) {
+    ensureAudio();
+    pickChineseVoice();
+    if (!speak(NEW_SMS_TEXT)) beep();   // 试播一次，让用户确认效果
+  } else if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+  }
+  soundBtn.textContent = soundOn ? '语音：开' : '语音：关';
+  soundBtn.className = 'sound ' + (soundOn ? 'on' : 'off');
+});
+
+// ---------- 工具 ----------
+function escapeHtml(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function displayName(from) {
+  return contacts[from] || from;
+}
+
+function avatarChar(from) {
+  const s = String(displayName(from) || '?').replace(/\s/g, '');
+  return s ? s[s.length - 1] : '?';
+}
+
+function fmtTime(t) {
+  if (!t) return '';
+  // 标准格式：26/10/12,09:29:33+32
+  const m = t.match(/(\d{2})\/(\d{2})\/(\d{2}),(\d{2}):(\d{2}):(\d{2})/);
+  if (m) return '20' + m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5];
+  // 部分随身WiFi 固件返回的非标准格式：26:10:1209:29:33 GMT+8
+  const m2 = t.match(/^(\d{2}):(\d{2}):(\d{2})(\d{2}):(\d{2}):(\d{2})/);
+  if (m2) return '20' + m2[1] + '-' + m2[2] + '-' + m2[3] + ' ' + m2[4] + ':' + m2[5];
+  return t;
+}
+
+// ---------- 渲染 ----------
+function renderList() {
+  countEl.textContent = smsList.length;
+  updatedEl.textContent = new Date().toLocaleTimeString();
+  if (!smsList.length) {
+    listEl.innerHTML = '<div class="empty">暂无短信，来短信会自动出现</div>';
+    return;
+  }
+  listEl.innerHTML = smsList.map(s => {
+    const preview = (s.body || '').replace(/\n/g, ' ');
+    const name = contacts[s.from];
+    const title = escapeHtml(name || s.from) + (name ? '<span class="num">' + escapeHtml(s.from) + '</span>' : '');
+    return '<div class="item ' + (s.unread ? 'new' : '') + '" data-idx="' + escapeHtml(s.index) + '">' +
+      '<div class="avatar">' + escapeHtml(avatarChar(s.from)) + '</div>' +
+      '<div class="mid"><div class="from">' + title + '</div>' +
+      '<div class="preview">' + escapeHtml(preview) + '</div></div>' +
+      '<div class="time">' + escapeHtml(fmtTime(s.time)) + '</div></div>';
+  }).join('');
+}
+
+listEl.addEventListener('click', e => {
+  const item = e.target.closest('.item');
+  if (!item) return;
+  const sms = smsList.find(x => x.index === item.dataset.idx);
+  if (sms) showDetail(sms);
+});
+
+// ---------- 详情 ----------
+function showDetail(sms) {
+  currentDetail = sms;
+  const name = contacts[sms.from];
+  dFrom.textContent = name ? (name + '  ' + sms.from) : sms.from;
+  dTime.textContent = fmtTime(sms.time);
+  dBody.textContent = sms.body;
+  replyInput.value = '';
+  updateCharCount();
+  sendStatus.textContent = '';
+  sendBtn.className = 'send-btn';
+  sendBtn.disabled = false;
+  copyBtn.textContent = '复制';
+  contactBtn.textContent = name ? '改备注' : '备注';
+  markRead(sms.index);
+  listView.style.display = 'none';
+  detailView.style.display = 'flex';
+  dBody.scrollTop = 0;
+}
+
+function backToList() {
+  currentDetail = null;
+  detailView.style.display = 'none';
+  listView.style.display = 'block';
+  renderList();
+}
+
+document.getElementById('btn-back').addEventListener('click', backToList);
+
+// 打开某条短信即标记已读（本地先生效，再通知后端同步到 data.json）
+function markRead(index) {
+  readLocally.add(index);
+  const item = smsList.find(x => x.index === index);
+  if (item) item.unread = false;
+  postJSON('/mark_read', { index: index });
+}
+
+function markAllRead() {
+  const idxs = smsList.filter(s => s.unread).map(s => s.index);
+  if (!idxs.length) return;
+  idxs.forEach(i => readLocally.add(i));
+  smsList.forEach(s => { s.unread = false; });
+  renderList();
+  postJSON('/mark_read_all', { indexes: idxs });
+}
+
+// ---------- 备注 ----------
+function editContact() {
+  if (!currentDetail) return;
+  const from = currentDetail.from;
+  const name = prompt('设置备注名（留空则清除）', contacts[from] || '');
+  if (name === null) return;
+  const clean = name.trim();
+  if (clean) contacts[from] = clean; else delete contacts[from];
+  contactBtn.textContent = clean ? '改备注' : '备注';
+  dFrom.textContent = clean ? (clean + '  ' + from) : from;
+  renderList();
+  postJSON('/contacts', { from: from, name: clean });
+}
+
+// ---------- 删除（同时从 SIM 卡删除） ----------
+function deleteCurrent() {
+  if (!currentDetail) return;
+  const idx = currentDetail.index;
+  if (!confirm('确定删除该短信？将同时从 SIM 卡中删除。')) return;
+  postJSON('/delete', { index: idx });
+  smsList = smsList.filter(s => s.index !== idx);
+  backToList();
+}
+
+// ---------- 复制 ----------
+async function copyDetail() {
+  if (!currentDetail) return;
+  const text = '来自: ' + currentDetail.from + '\n时间: ' + fmtTime(currentDetail.time) + '\n\n' + currentDetail.body;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+  }
+  copyBtn.textContent = ok ? '已复制' : '复制失败';
+  setTimeout(() => { copyBtn.textContent = '复制'; }, 1500);
+}
+
+function updateCharCount() {
+  const n = replyInput.value.length;
+  charCountEl.textContent = n > 70 ? n + '/70（将分 ' + Math.ceil(n / 70) + ' 条发送）' : n + '/70';
+  charCountEl.style.color = n > 70 ? '#fbbf24' : '#64748b';
+}
+
+copyBtn.addEventListener('click', copyDetail);
+readAllBtn.addEventListener('click', markAllRead);
+contactBtn.addEventListener('click', editContact);
+deleteBtn.addEventListener('click', deleteCurrent);
+replyInput.addEventListener('input', updateCharCount);
+
+// ---------- 通用请求 ----------
+async function postJSON(path, obj) {
+  try {
+    const r = await fetch(api(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj)
+    });
+    if (r.status === 401) askToken();
+    return r;
+  } catch (e) { return null; }
+}
+
+// ---------- 发送短信 ----------
+async function sendReply() {
+  const body = replyInput.value.trim();
+  if (!body || !currentDetail) return;
+  const id = Date.now() + '';
+  sendBtn.disabled = true;
+  sendStatus.textContent = '发送中...';
+  const r = await postJSON('/send', { id: id, to: currentDetail.from, body: body });
+  if (!r || !r.ok) {
+    sendStatus.textContent = '发送失败：服务器错误';
+    sendBtn.className = 'send-btn fail';
+    sendBtn.disabled = false;
+    return;
+  }
+  sendingId = id;
+  pollSendResult(id);
+}
+
+async function pollSendResult(id) {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const res = await fetch(api('/send_result'), { cache: 'no-store' });
+      if (res.status === 401) { askToken(); return; }
+      const data = await res.json();
+      const r = data && data[id];
+      if (r) {
+        if (r.status === 'ok') {
+          sendStatus.textContent = '已发送';
+          sendBtn.className = 'send-btn ok';
+        } else {
+          sendStatus.textContent = '发送失败：' + (r.message || '未知错误');
+          sendBtn.className = 'send-btn fail';
+        }
+        sendBtn.disabled = false;
+        sendingId = null;
+        return;
+      }
+    } catch (e) {}
+  }
+  sendStatus.textContent = '发送超时，请重试';
+  sendBtn.className = 'send-btn fail';
+  sendBtn.disabled = false;
+  sendingId = null;
+}
+
+sendBtn.addEventListener('click', sendReply);
+replyInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendReply();
+});
+
+// ---------- 数据应用 ----------
+function applyData(list) {
+  if (!Array.isArray(list)) return;
+  let newCount = 0;
+  list.forEach(s => {
+    if (readLocally.has(s.index)) s.unread = false;
+    const k = s.index + '|' + s.body;
+    if (!knownKeys.has(k)) {
+      knownKeys.add(k);
+      if (s.unread) newCount++;
+    }
+  });
+  if (newCount > 0) {
+    alertNewSMS();
+    document.title = '(' + newCount + '条新短信) 随身WiFi 短信';
+    setTimeout(() => { document.title = '随身WiFi 短信'; }, 5000);
+  }
+  smsList = list;
+  if (currentDetail) {
+    const upd = smsList.find(x => x.index === currentDetail.index);
+    if (upd) {
+      currentDetail = upd;
+      dBody.textContent = upd.body;
+      dTime.textContent = fmtTime(upd.time);
+    } else {
+      backToList();   // 该短信已被删除
+    }
+  }
+  renderList();
+}
+
+// ---------- 轮询（SSE 不可用时的兜底） ----------
+let pollTimer = null;
+
+async function refresh() {
+  try {
+    const r = await fetch(api('data.json?t=' + Date.now()), { cache: 'no-store' });
+    if (r.status === 401) { askToken(); return; }
+    applyData(await r.json());
+  } catch (e) {}
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  refresh();
+  pollTimer = setInterval(refresh, 2000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ---------- SSE 实时推送 ----------
+function setLive(on) {
+  liveEl.textContent = on ? '实时' : '轮询';
+  liveEl.className = 'badge' + (on ? '' : ' off');
+  connTip.textContent = on ? '实时推送已连接' : '实时推送不可用，已切换为轮询';
+}
+
+function startSSE() {
+  if (!window.EventSource) { setLive(false); return; }
+  let es;
+  try { es = new EventSource(api('/events')); } catch (e) { setLive(false); return; }
+  es.onopen = () => { setLive(true); stopPolling(); };
+  es.onmessage = e => {
+    setLive(true);
+    stopPolling();
+    try { applyData(JSON.parse(e.data)); } catch (err) {}
+  };
+  es.onerror = () => {
+    setLive(false);
+    startPolling();   // EventSource 会自动重连，重连成功后再次切回实时
+  };
+}
+
+// ---------- 启动 ----------
+async function loadContacts() {
+  try {
+    const r = await fetch(api('/contacts'), { cache: 'no-store' });
+    if (r.ok) { const c = await r.json(); if (c && typeof c === 'object') contacts = c; }
+    renderList();
+  } catch (e) {}
+}
+
+loadContacts();
+startPolling();
+startSSE();
+</script>
+</body>
+</html>
