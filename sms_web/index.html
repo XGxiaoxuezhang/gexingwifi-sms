@@ -642,7 +642,7 @@ async function pollSendResult(id, statusEl, btnEl, onOk) {
       }
     } catch (e) {}
   }
-  statusEl.textContent = '发送超时，请重试';
+  statusEl.textContent = '发送超时：可查看 logs\\poll.log 中的发送结果';
   btnEl.className = 'send-btn fail';
   btnEl.disabled = false;
   sendingId = null;

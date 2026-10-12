@@ -1068,28 +1068,48 @@ $('reply-input').addEventListener('input', updateCharCount);
 async function doSendSms(to, body) {
   const parts = splitBody(body, 70);
   for (let i = 0; i < parts.length; i++) {
-    const ok = await sendOneSms(to, parts[i]);
-    if (!ok) return '第 ' + (i + 1) + ' 条发送失败';
+    const r = await sendOneSms(to, parts[i]);
+    if (r !== 'OK') return (parts.length > 1 ? ('第 ' + (i + 1) + ' 条：') : '') + r;
   }
   return 'OK';
 }
 
+// 返回 'OK' 或失败原因（含设备返回的原始信息，便于定位）
 async function sendOneSms(to, body) {
-  await sendAT('AT+CSCS="UCS2"', 2000);
-  rxBuf = '';
-  const promptWait = waitResponse(/>/, 4000);
-  await writeRaw('AT+CMGS="' + encodeUcs2(to) + '"\r');
-  const prompt = await promptWait;
-  if (!prompt) {
-    await sendAT('AT+CSCS="GSM"', 1500);
-    return false;
+  // 标准做法：CSCS=UCS2 时号码也按 UCS2 编码（"10010" -> "00310030003000310030"）
+  const r1 = await sendViaSms(encodeUcs2(to), body);
+  if (r1.ok) return 'OK';
+  // 设备连输入提示符都不给，通常是不认 UCS2 号码，用原始号码再试一次
+  if (r1.noPrompt) {
+    const r2 = await sendViaSms(to, body);
+    if (r2.ok) return 'OK';
+    return r2.msg;
   }
-  rxBuf = '';
-  const okWait = waitResponse(/OK|ERROR/, 15000);
-  await writeRaw(encodeUcs2(body) + '\x1A');
-  const resp = await okWait;
-  await sendAT('AT+CSCS="GSM"', 1500);
-  return !!(resp && /OK/.test(resp));
+  return r1.msg;
+}
+
+async function sendViaSms(daHex, body) {
+  try {
+    await sendAT('AT+CSCS="UCS2"', 2000);
+    rxBuf = '';
+    const promptWait = waitResponse(/>/, 5000);
+    await writeRaw('AT+CMGS="' + daHex + '"\r');
+    const prompt = await promptWait;
+    if (!prompt) {
+      await sendAT('AT+CSCS="GSM"', 1500);
+      return { ok: false, noPrompt: true, msg: '设备没有返回输入提示符（号码格式可能不被支持）' };
+    }
+    rxBuf = '';
+    const okWait = waitResponse(/OK|ERROR/, 20000);
+    await writeRaw(encodeUcs2(body) + '\x1A');
+    const resp = await okWait;
+    await sendAT('AT+CSCS="GSM"', 1500);
+    if (resp && /OK/.test(resp) && !/ERROR/.test(resp)) return { ok: true };
+    const clean = (resp || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    return { ok: false, noPrompt: false, msg: clean ? ('设备返回 ' + clean) : '设备无响应（超时）' };
+  } catch (e) {
+    return { ok: false, noPrompt: false, msg: '异常：' + ((e && e.message) || e) };
+  }
 }
 
 async function sendReply() {

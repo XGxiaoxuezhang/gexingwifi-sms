@@ -222,16 +222,28 @@ function Split-SmsBody {
     return ,$parts
 }
 
-# 发送一条短信（AT+CMGS，UCS2 编码），返回 OK 或错误信息
+# 发送一条短信（AT+CMGS）：标准做法是 CSCS=UCS2 时号码也用 UCS2 编码，
+# 但部分模块要求号码保持原样，因此拿不到输入提示符时会自动用原始号码重试一次。
 function Send-SMS($sp, [string]$to, [string]$body) {
+    $r = Send-SMS-Raw $sp (UCS2-Encode $to) $body
+    if ($r -ne 'NO_PROMPT') { return $r }
+    Write-Log "UCS2 号码未获得输入提示符，改用原始号码重试：$to" 'WARN'
+    $r2 = Send-SMS-Raw $sp $to $body
+    if ($r2 -eq 'NO_PROMPT') {
+        return '失败：设备未就绪，没有返回输入提示符（已尝试 UCS2 与原始号码两种格式）'
+    }
+    return $r2
+}
+
+# 真正执行一次发送；'NO_PROMPT' 是内部标记，表示设备未给出 ">" 提示符
+function Send-SMS-Raw($sp, [string]$daHex, [string]$body) {
     try {
         $null = Send-AT $sp 'AT+CSCS="UCS2"' 800
-        $toHex = UCS2-Encode $to
         $bodyHex = UCS2-Encode $body
         $sp.DiscardInBuffer()
-        $sp.Write("AT+CMGS=`"$toHex`"" + [char]13)
+        $sp.Write("AT+CMGS=`"$daHex`"" + [char]13)
         $prompt = ''
-        $deadline = (Get-Date).AddMilliseconds(4000)
+        $deadline = (Get-Date).AddMilliseconds(5000)
         while ((Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 150
             if ($sp.BytesToRead -gt 0) { $prompt += $sp.ReadExisting() }
@@ -239,19 +251,23 @@ function Send-SMS($sp, [string]$to, [string]$body) {
         }
         if ($prompt -notmatch '>') {
             $null = Send-AT $sp 'AT+CSCS="GSM"' 500
-            return "失败：无输入提示符（$prompt）"
+            return 'NO_PROMPT'
         }
         $sp.Write($bodyHex + [char]0x1A)
         Start-Sleep -Milliseconds 1500
         $resp = ''
-        $deadline2 = (Get-Date).AddMilliseconds(8000)
+        $deadline2 = (Get-Date).AddMilliseconds(10000)
         while ((Get-Date) -lt $deadline2) {
             Start-Sleep -Milliseconds 150
             if ($sp.BytesToRead -gt 0) { $resp += $sp.ReadExisting() }
             if ($resp -match 'OK' -or $resp -match 'ERROR') { break }
         }
         $null = Send-AT $sp 'AT+CSCS="GSM"' 500
-        if ($resp -match 'OK') { return 'OK' } else { return "失败：$resp" }
+        $clean = ($resp -replace '\s+', ' ').Trim()
+        if ($clean.Length -gt 160) { $clean = $clean.Substring(0, 160) }
+        if ($resp -match 'ERROR') { return "失败：设备返回 $clean" }
+        if ($resp -match 'OK') { return 'OK' }
+        return "失败：设备无响应（$clean）"
     } catch {
         try { $null = Send-AT $sp 'AT+CSCS="GSM"' 500 } catch {}
         return "异常：$($_.Exception.Message)"
