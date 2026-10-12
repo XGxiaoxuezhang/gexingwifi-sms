@@ -718,7 +718,7 @@ async function composeSend() {
   pollSendResult(id, composeStatus, composeSendBtn, () => {
     composeText.value = '';
     updateComposeCount();
-    setTimeout(closeCompose, 900);
+    renderList();   // 刷新列表，但不自动关闭，便于看清发送结果
   });
 }
 

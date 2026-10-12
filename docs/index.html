@@ -1065,33 +1065,37 @@ function updateCharCount() {
 
 $('reply-input').addEventListener('input', updateCharCount);
 
-async function doSendSms(to, body) {
+async function doSendSms(to, body, onProgress) {
   const parts = splitBody(body, 70);
   for (let i = 0; i < parts.length; i++) {
-    const r = await sendOneSms(to, parts[i]);
-    if (r !== 'OK') return (parts.length > 1 ? ('第 ' + (i + 1) + ' 条：') : '') + r;
+    const tag = parts.length > 1 ? ('第 ' + (i + 1) + '/' + parts.length + ' 条，') : '';
+    if (onProgress) onProgress(tag + '正在与设备握手...');
+    const r = await sendOneSms(to, parts[i], (m) => { if (onProgress) onProgress(tag + m); });
+    if (r !== 'OK') return tag + r;
   }
   return 'OK';
 }
 
 // 返回 'OK' 或失败原因（含设备返回的原始信息，便于定位）
-async function sendOneSms(to, body) {
+async function sendOneSms(to, body, onProgress) {
   // 标准做法：CSCS=UCS2 时号码也按 UCS2 编码（"10010" -> "00310030003000310030"）
-  const r1 = await sendViaSms(encodeUcs2(to), body);
+  const r1 = await sendViaSms(encodeUcs2(to), body, onProgress);
   if (r1.ok) return 'OK';
   // 设备连输入提示符都不给，通常是不认 UCS2 号码，用原始号码再试一次
   if (r1.noPrompt) {
-    const r2 = await sendViaSms(to, body);
+    if (onProgress) onProgress('未获提示符，改用原始号码重试...');
+    const r2 = await sendViaSms(to, body, onProgress);
     if (r2.ok) return 'OK';
     return r2.msg;
   }
   return r1.msg;
 }
 
-async function sendViaSms(daHex, body) {
+async function sendViaSms(daHex, body, onProgress) {
   try {
     await sendAT('AT+CSCS="UCS2"', 2000);
     rxBuf = '';
+    if (onProgress) onProgress('等待设备输入提示符...');
     const promptWait = waitResponse(/>/, 5000);
     await writeRaw('AT+CMGS="' + daHex + '"\r');
     const prompt = await promptWait;
@@ -1100,7 +1104,8 @@ async function sendViaSms(daHex, body) {
       return { ok: false, noPrompt: true, msg: '设备没有返回输入提示符（号码格式可能不被支持）' };
     }
     rxBuf = '';
-    const okWait = waitResponse(/OK|ERROR/, 20000);
+    if (onProgress) onProgress('提示符已收到，正在提交内容...');
+    const okWait = waitResponse(/OK|ERROR/, 12000);
     await writeRaw(encodeUcs2(body) + '\x1A');
     const resp = await okWait;
     await sendAT('AT+CSCS="GSM"', 1500);
@@ -1116,18 +1121,29 @@ async function sendReply() {
   const body = $('reply-input').value.trim();
   if (!body || !currentDetail) return;
   if (!connected) { $('send-status').textContent = '设备未连接'; return; }
+  if (busy) { $('send-status').textContent = '设备正忙，请稍候'; return; }
   const btn = $('btn-send');
   btn.disabled = true;
-  $('send-status').textContent = '发送中...';
-  const r = await doSendSms(currentDetail.from, body);
-  if (r === 'OK') {
-    $('send-status').textContent = '已发送';
-    btn.className = 'send-btn ok';
-  } else {
-    $('send-status').textContent = '发送失败：' + r;
+  $('send-status').textContent = '开始发送...';
+  busy = true;   // 独占串口，避免与轮询抢串口
+  try {
+    const r = await doSendSms(currentDetail.from, body, (m) => { $('send-status').textContent = m; });
+    if (r === 'OK') {
+      $('send-status').textContent = '✓ 已发送';
+      btn.className = 'send-btn ok';
+      $('reply-input').value = '';
+      updateCharCount();
+    } else {
+      $('send-status').textContent = '✗ ' + r;
+      btn.className = 'send-btn fail';
+    }
+  } catch (e) {
+    $('send-status').textContent = '✗ 异常：' + ((e && e.message) || e);
     btn.className = 'send-btn fail';
+  } finally {
+    busy = false;
+    btn.disabled = false;
   }
-  btn.disabled = false;
 }
 
 $('btn-send').addEventListener('click', sendReply);
@@ -1232,24 +1248,37 @@ async function composeSend() {
   const to = $('compose-to').value.trim();
   const body = $('compose-text').value.trim();
   const status = $('compose-status');
+  const btn = $('btn-compose-send');
   if (!to) { status.textContent = '请填写收件人'; $('compose-to').focus(); return; }
   if (!body) { status.textContent = '请填写短信内容'; $('compose-text').focus(); return; }
-  if (!connected) { status.textContent = '设备未连接'; return; }
-  const btn = $('btn-compose-send');
+  if (!connected) { status.textContent = '设备未连接，请重新连接后再发送'; return; }
+  if (busy) { status.textContent = '设备正忙（正在收发其他指令），请等 1~2 秒再点发送'; return; }
+
+  const oldLabel = btn.textContent;
   btn.disabled = true;
-  status.textContent = '发送中...';
-  const r = await doSendSms(to, body);
-  if (r === 'OK') {
-    status.textContent = '已发送给 ' + to;
-    btn.className = 'send-btn ok';
-    $('compose-text').value = '';
-    updateComposeCount();
-    setTimeout(() => { closeCompose(); pollNewSms(); }, 900);
-  } else {
-    status.textContent = '发送失败：' + r;
+  btn.textContent = '发送中';
+  status.textContent = '开始发送...';
+  busy = true;   // 独占串口，避免与 5 秒一次的短信轮询互相打架
+  try {
+    const r = await doSendSms(to, body, (m) => { status.textContent = m; });
+    if (r === 'OK') {
+      status.textContent = '✓ 设备已接受，短信已提交给 ' + to + '（若对方是 10010 等，回复可能较慢或不回复）';
+      btn.className = 'send-btn ok';
+      $('compose-text').value = '';
+      updateComposeCount();
+      pollNewSms();
+    } else {
+      status.textContent = '✗ ' + r;
+      btn.className = 'send-btn fail';
+    }
+  } catch (e) {
+    status.textContent = '✗ 异常：' + ((e && e.message) || e);
     btn.className = 'send-btn fail';
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = oldLabel;
   }
-  btn.disabled = false;
 }
 
 $('btn-compose').addEventListener('click', openCompose);
