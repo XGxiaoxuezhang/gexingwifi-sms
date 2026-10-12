@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>格行随身WiFi 短信助手</title>
+<meta name="description" content="纯前端随身WiFi 短信助手：浏览器通过 Web Serial 直连串口收发短信、调试 AT 指令，无需安装任何后端。">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; display:flex; flex-direction:column; }
+  .header { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid #1e293b; background:#0b1220; }
+  .header h1 { font-size:17px; font-weight:600; flex:1; }
+  .header h1 small { font-size:12px; color:#64748b; font-weight:400; margin-left:6px; }
+  .badge { padding:3px 12px; border-radius:999px; font-size:12px; background:#475569; color:#e2e8f0; }
+  .badge.on { background:#059669; color:#fff; }
+  .sound { border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
+  .sound.on { background:#059669; color:#fff; }
+  .sound.off { background:#334155; color:#94a3b8; }
+  .act { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
+  .act:hover { background:#475569; }
+  .btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:14px; cursor:pointer; }
+  .btn:hover { background:#1d4ed8; }
+  .btn:disabled { background:#334155; color:#64748b; cursor:not-allowed; }
+  .btn.ghost { background:#334155; color:#cbd5e1; }
+  .btn.ghost:hover { background:#475569; }
+  .btn.danger { background:#7f1d1d; color:#fecaca; }
+  .btn.danger:hover { background:#991b1b; }
+
+  .connect-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .connect-card { width:100%; max-width:560px; background:#0b1220; border:1px solid #1e293b; border-radius:14px; padding:24px; }
+  .connect-card h2 { font-size:16px; margin-bottom:12px; }
+  .connect-card p { font-size:13px; color:#94a3b8; line-height:1.8; margin-bottom:10px; }
+  .connect-card ol { font-size:13px; color:#94a3b8; line-height:1.9; margin:0 0 14px 20px; }
+  .connect-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; }
+  .connect-row label { font-size:13px; color:#94a3b8; }
+  select.inp, input.inp { background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; padding:8px 10px; font-family:inherit; }
+  input.inp:focus, select.inp:focus { outline:none; border-color:#38bdf8; }
+  .warn-box { background:#422006; border:1px solid #854d0e; color:#fde68a; border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.7; margin-top:14px; }
+
+  .tabs { display:flex; gap:4px; padding:0 20px; background:#0b1220; border-bottom:1px solid #1e293b; }
+  .tab { background:none; border:none; border-bottom:2px solid transparent; color:#94a3b8; font-size:14px; padding:10px 14px; cursor:pointer; }
+  .tab:hover { color:#cbd5e1; }
+  .tab.active { color:#38bdf8; border-bottom-color:#38bdf8; }
+
+  #app { display:none; flex-direction:column; flex:1; min-height:0; }
+  .stats { color:#64748b; font-size:12px; padding:6px 20px; border-bottom:1px solid #1e293b; }
+  #list-view { flex:1; overflow-y:auto; }
+  .item { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid #1e293b; cursor:pointer; }
+  .item:hover { background:#1e293b; }
+  .item.new { background:#172c4a; }
+  .avatar { width:40px; height:40px; border-radius:50%; background:#1d4ed8; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; flex-shrink:0; }
+  .item .mid { flex:1; min-width:0; }
+  .item .from { font-size:15px; font-weight:600; }
+  .item.new .from { color:#7dd3fc; }
+  .item .num { font-size:12px; color:#64748b; font-weight:400; margin-left:6px; }
+  .item .preview { font-size:13px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .item .time { font-size:12px; color:#64748b; flex-shrink:0; }
+  .empty { color:#64748b; text-align:center; padding:70px 20px; line-height:2; }
+
+  #detail-view { display:none; flex-direction:column; flex:1; min-height:0; }
+  .detail-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #1e293b; background:#0b1220; }
+  .back { background:none; border:none; color:#7dd3fc; font-size:16px; cursor:pointer; padding:6px; }
+  .detail-head .meta { flex:1; min-width:0; }
+  .detail-head .dfrom { font-size:16px; font-weight:600; }
+  .detail-head .dtime { font-size:12px; color:#64748b; margin-top:2px; }
+  .detail-body { flex:1; overflow-y:auto; padding:24px 20px; line-height:1.9; font-size:16px; white-space:pre-wrap; word-break:break-all; }
+  .reply { border-top:1px solid #1e293b; padding:12px 16px; background:#0b1220; }
+  .reply textarea { width:100%; height:72px; background:#1e293b; border:1px solid #334155; border-radius:10px; color:#e2e8f0; font-size:14px; padding:10px; resize:none; font-family:inherit; }
+  .reply textarea:focus { outline:none; border-color:#38bdf8; }
+  .reply-bar { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  .reply-bar .status { flex:1; font-size:12px; color:#94a3b8; }
+  .send-btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:9px 24px; font-size:14px; cursor:pointer; }
+  .send-btn:disabled { background:#334155; color:#94a3b8; cursor:not-allowed; }
+  .send-btn.ok { background:#059669; }
+  .send-btn.fail { background:#dc2626; }
+  .mini { background:none; border:1px solid #334155; color:#7dd3fc; border-radius:8px; padding:5px 12px; font-size:12px; cursor:pointer; flex-shrink:0; }
+  .mini:hover { border-color:#38bdf8; }
+  .mini.danger { color:#fca5a5; border-color:#4c1d1d; }
+  .mini.danger:hover { border-color:#dc2626; }
+  .char-count { font-size:12px; color:#64748b; }
+  .tip { color:#64748b; font-size:12px; }
+
+  #debug-view { display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding:16px 20px 28px; }
+  .dbg-warn { background:#422006; border:1px solid #854d0e; color:#fde68a; border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.7; margin-bottom:16px; }
+  .dbg-section { margin-bottom:18px; }
+  .dbg-section h3 { font-size:13px; color:#94a3b8; font-weight:600; margin-bottom:10px; }
+  .dbg-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .dbg-row > label { font-size:13px; color:#94a3b8; min-width:62px; }
+  .dbg-input { flex:1; min-width:150px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; padding:8px 10px; font-family:inherit; }
+  .dbg-input:focus { outline:none; border-color:#38bdf8; }
+  .dbg-btn { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; }
+  .dbg-btn:hover { background:#475569; }
+  .dbg-btn.primary { background:#2563eb; color:#fff; }
+  .dbg-btn.danger { background:#7f1d1d; color:#fecaca; }
+  .dbg-btn.danger:hover { background:#991b1b; }
+  .dbg-log { width:100%; height:200px; background:#020617; border:1px solid #1e293b; border-radius:8px; color:#a5f3fc; font-family:Consolas, "Courier New", monospace; font-size:12px; padding:10px; resize:vertical; white-space:pre-wrap; }
+  .dbg-bands { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
+  .dbg-bands label { display:flex; align-items:center; gap:4px; font-size:13px; color:#cbd5e1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>格行随身WiFi 短信助手<small>纯前端 · 无需后端</small></h1>
+  <button id="btn-sound" class="sound off">语音：关</button>
+  <button id="btn-disconnect" class="act" style="display:none">断开设备</button>
+  <span class="badge" id="conn-badge">未连接</span>
+</div>
+
+<!-- 未连接时的引导 -->
+<div class="connect-wrap" id="connect-view">
+  <div class="connect-card">
+    <h2>连接随身WiFi / 短信设备</h2>
+    <ol>
+      <li>用数据线把设备连到电脑，确认它出现在「设备管理器 → 端口」里</li>
+      <li>点下面的「连接设备」，在浏览器弹出的窗口中选择该串口</li>
+      <li>连接后即可收短信、发短信、调试 AT 指令</li>
+    </ol>
+    <div class="connect-row">
+      <label>波特率</label>
+      <select class="inp" id="baud">
+        <option value="115200" selected>115200</option>
+        <option value="9600">9600</option>
+        <option value="57600">57600</option>
+        <option value="921600">921600</option>
+      </select>
+      <button class="btn" id="btn-connect">连接设备</button>
+    </div>
+    <div class="warn-box">
+      必须使用 <b>Chrome / Edge 等 Chromium 内核浏览器</b>，并通过 <b>https 或 localhost</b> 打开本页
+      （Web Serial 的安全限制，直接双击 html 文件无法使用）。<br>
+      串口只能被一个程序占用，连接前请先关闭其他占用该串口的程序（含本项目的托盘监控）。
+    </div>
+    <p id="connect-msg" class="tip" style="margin-top:12px"></p>
+  </div>
+</div>
+
+<!-- 已连接后的主界面 -->
+<div id="app">
+  <div class="tabs">
+    <button class="tab active" id="tab-sms">短信</button>
+    <button class="tab" id="tab-debug">AT 调试</button>
+  </div>
+
+  <div id="sms-view" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="stats">共 <b id="count">0</b> 条 · 上次刷新 <span id="updated">-</span> · 自动每 5 秒检查新短信</div>
+
+    <div id="list-view">
+      <div id="list"></div>
+    </div>
+
+    <div id="detail-view">
+      <div class="detail-head">
+        <button class="back" id="btn-back">← 返回</button>
+        <div class="meta">
+          <div class="dfrom" id="d-from"></div>
+          <div class="dtime" id="d-time"></div>
+        </div>
+        <button class="mini" id="btn-contact">备注</button>
+        <button class="mini" id="btn-copy">复制</button>
+        <button class="mini danger" id="btn-delete">删除</button>
+      </div>
+      <div class="detail-body" id="d-body"></div>
+      <div class="reply">
+        <textarea id="reply-input" placeholder="输入回复内容..."></textarea>
+        <div class="reply-bar">
+          <span class="status" id="send-status"></span>
+          <span class="char-count" id="char-count">0/70</span>
+          <button class="send-btn" id="btn-send">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="debug-view">
+    <div class="dbg-warn">
+      <b>高风险操作提醒</b>：「删除 / 写入」IMEI、SN、WiFi ID 以及锁定频段、重启都会直接改变设备状态，
+      写错可能导致设备无法上网；篡改 IMEI 在多数国家和地区属于违规行为，请只用于维修自己名下的设备。
+    </div>
+
+    <div class="dbg-section">
+      <h3>设备信息（写号前先「删除」，并确保已开启工厂模式）</h3>
+      <div class="dbg-row">
+        <label>IMEI</label>
+        <input class="dbg-input" id="dbg-imei" placeholder="IMEI">
+        <button class="dbg-btn" data-at="AT+CGSN">读取</button>
+        <button class="dbg-btn danger" data-at="AT*MRD_IMEI=D" data-confirm="确定删除 IMEI？">删除</button>
+        <button class="dbg-btn danger" id="dbg-imei-w">写入</button>
+      </div>
+      <div class="dbg-row">
+        <label>SN</label>
+        <input class="dbg-input" id="dbg-sn" placeholder="仅支持有 SN 号的设备">
+        <button class="dbg-btn" data-at="AT*MRD_SN?">读取</button>
+        <button class="dbg-btn danger" data-at="AT*MRD_SN=D" data-confirm="确定删除 SN？">删除</button>
+        <button class="dbg-btn danger" id="dbg-sn-w">写入</button>
+      </div>
+      <div class="dbg-row">
+        <label>WiFi ID</label>
+        <input class="dbg-input" id="dbg-mac" placeholder="WiFi MAC（写入可不带冒号）">
+        <button class="dbg-btn" data-at="AT*MRD_WIFIID?">读取</button>
+        <button class="dbg-btn danger" data-at="AT*MRD_WIFIID=D" data-confirm="确定删除 WiFi ID？">删除</button>
+        <button class="dbg-btn danger" id="dbg-mac-w">写入</button>
+      </div>
+      <div class="dbg-row">
+        <label>工厂模式</label>
+        <button class="dbg-btn danger" data-at="AT*PROD=1" data-confirm="进入工厂模式后才能写号，确定开启？">开启</button>
+        <button class="dbg-btn" data-at="AT*PROD=0">退出</button>
+      </div>
+    </div>
+
+    <div class="dbg-section">
+      <h3>频段（先「读取频段」，再勾选要锁定的频段）</h3>
+      <div class="dbg-row">
+        <button class="dbg-btn" id="dbg-read-band">读取频段</button>
+        <span class="tip">当前：<span id="dbg-band-cur">-</span></span>
+      </div>
+      <div class="dbg-bands" id="dbg-bands"></div>
+      <div class="dbg-row">
+        <button class="dbg-btn danger" id="dbg-lock-band">锁定频段</button>
+        <span class="tip">显示的频段不一定支持，能成功锁定的频段才算支持</span>
+      </div>
+    </div>
+
+    <div class="dbg-section">
+      <h3>其他操作</h3>
+      <div class="dbg-row">
+        <button class="dbg-btn" data-at="AT+SWSIM=0">切到卡1</button>
+        <button class="dbg-btn" data-at="AT+SWSIM=1">切到卡2</button>
+        <button class="dbg-btn danger" data-at="AT+RESET" data-confirm="确定重启设备？网络会中断。">重启</button>
+      </div>
+    </div>
+
+    <div class="dbg-section">
+      <h3>自定义 AT 指令</h3>
+      <div class="dbg-row">
+        <input class="dbg-input" id="dbg-custom" placeholder="例如：AT+CGSN 或 AT*BAND?">
+        <button class="dbg-btn primary" id="dbg-send">发送</button>
+      </div>
+    </div>
+
+    <div class="dbg-section">
+      <h3>收发日志</h3>
+      <textarea class="dbg-log" id="dbg-log" readonly placeholder="连接设备后，收发的数据会显示在这里"></textarea>
+      <div class="dbg-row" style="margin-top:8px">
+        <button class="dbg-btn" id="dbg-clear">清空日志</button>
+        <label style="min-width:auto;display:flex;align-items:center;gap:5px;font-size:13px;color:#94a3b8">
+          <input type="checkbox" id="dbg-echo" checked> 显示发送内容
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== 常量与状态 ====================
+const DBG_BANDS = [1, 3, 5, 8, 38, 39, 40, 41];
+const NEW_SMS_TEXT = '您有新的短信，请注意查收';
+const POLL_MS = 5000;
+
+let port = null;
+let reader = null;
+let reading = false;
+let connected = false;
+let rxBuf = '';
+let rxWaiter = null;
+let busy = false;          // AT 指令串行化，避免并发争抢
+
+let smsList = [];
+let seenKeys = new Set();
+let currentDetail = null;
+let contacts = {};
+let soundOn = false;
+let audioCtx = null;
+let zhVoice = null;
+let pollTimer = null;
+let dbgBandStr = '';
+let dbgViewActive = false;   // 「AT 调试」标签页是否可见（不可见时不刷日志）
+
+const $ = (id) => document.getElementById(id);
+
+// ==================== 工具 ====================
+function escapeHtml(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function decodeUcs2(s) {
+  // 纯数字内容可能是明文（如验证码），只有含 A-F 才按 UCS2 解码
+  if (/^[0-9A-Fa-f]+$/.test(s) && s.length > 0 && s.length % 4 === 0 && /[A-Fa-f]/.test(s)) {
+    let r = '';
+    for (let i = 0; i < s.length; i += 4) r += String.fromCharCode(parseInt(s.substr(i, 4), 16));
+    return r;
+  }
+  return s;
+}
+
+function encodeUcs2(s) {
+  let r = '';
+  for (const ch of s) r += ch.charCodeAt(0).toString(16).padStart(4, '0');
+  return r.toUpperCase();
+}
+
+function splitBody(body, max) {
+  const out = [];
+  for (let i = 0; i < body.length; i += max) out.push(body.substr(i, max));
+  return out.length ? out : [''];
+}
+
+function fmtTime(t) {
+  if (!t) return '';
+  let m = t.match(/(\d{2})\/(\d{2})\/(\d{2}),(\d{2}):(\d{2}):(\d{2})/);
+  if (m) return '20' + m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5];
+  m = t.match(/^(\d{2}):(\d{2}):(\d{2})(\d{2}):(\d{2}):(\d{2})/);
+  if (m) return '20' + m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5];
+  return t;
+}
+
+function displayName(from) { return contacts[from] || from; }
+
+function avatarChar(from) {
+  const s = String(displayName(from) || '?').replace(/\s/g, '');
+  return s ? s[s.length - 1] : '?';
+}
+
+// ==================== 本地存储 ====================
+function loadLocal() {
+  try {
+    contacts = JSON.parse(localStorage.getItem('wifiSms.contacts') || '{}') || {};
+    soundOn = localStorage.getItem('wifiSms.sound') === '1';
+  } catch (e) { contacts = {}; soundOn = false; }
+}
+
+function saveContacts() {
+  try { localStorage.setItem('wifiSms.contacts', JSON.stringify(contacts)); } catch (e) {}
+}
+
+// ==================== 语音播报 ====================
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+}
+
+function pickChineseVoice() {
+  if (!('speechSynthesis' in window)) return null;
+  if (zhVoice) return zhVoice;
+  const voices = speechSynthesis.getVoices() || [];
+  zhVoice = voices.find(v => /^zh[-_]?CN$/i.test(v.lang)) || voices.find(v => /^zh/i.test(v.lang)) || null;
+  return zhVoice;
+}
+
+function speak(text) {
+  if (!('speechSynthesis' in window)) return false;
+  const v = pickChineseVoice();
+  if (!v) return false;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    u.voice = v;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+
+function beep() {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    o.start(); o.stop(audioCtx.currentTime + 0.25);
+  } catch (e) {}
+}
+
+function alertNewSms() {
+  if (!soundOn) return;
+  ensureAudio();
+  if (!speak(NEW_SMS_TEXT)) { beep(); setTimeout(beep, 260); }
+}
+
+$('btn-sound').addEventListener('click', () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem('wifiSms.sound', soundOn ? '1' : '0'); } catch (e) {}
+  if (soundOn) {
+    ensureAudio();
+    pickChineseVoice();
+    if (!speak(NEW_SMS_TEXT)) beep();
+  } else if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+  }
+  const b = $('btn-sound');
+  b.textContent = soundOn ? '语音：开' : '语音：关';
+  b.className = 'sound ' + (soundOn ? 'on' : 'off');
+});
+
+// ==================== Web Serial 通信层 ====================
+function setBadge(on) {
+  const b = $('conn-badge');
+  b.textContent = on ? '已连接' : '未连接';
+  b.className = 'badge' + (on ? ' on' : '');
+  $('btn-disconnect').style.display = on ? '' : 'none';
+}
+
+function onRx(text) {
+  rxBuf += text;
+  if (rxWaiter && rxWaiter.matcher.test(rxBuf)) {
+    const w = rxWaiter;
+    rxWaiter = null;
+    clearTimeout(w.timer);
+    w.resolve(rxBuf);
+  }
+}
+
+function waitResponse(matcher, timeoutMs) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { rxWaiter = null; resolve(null); }, timeoutMs);
+    rxWaiter = { matcher, resolve, timer };
+  });
+}
+
+async function readLoop() {
+  const dec = new TextDecoder();
+  while (port && port.readable && reading) {
+    try {
+      reader = port.readable.getReader();
+    } catch (e) { break; }
+    try {
+      while (reading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value && value.length) {
+          const text = dec.decode(value, { stream: true });
+          onRx(text);
+          dbgAppendRaw(text);
+        }
+      }
+    } catch (e) {
+      if (reading) dbgAppendRaw('\n[读取中断] ' + ((e && e.message) || e) + '\n');
+    } finally {
+      try { reader.releaseLock(); } catch (e) {}
+      reader = null;
+    }
+  }
+  if (reading && port && !port.readable) {
+    appendConnectMsg('设备已断开，请重新连接。');
+    await doDisconnect();
+  }
+}
+
+async function writeRaw(s) {
+  if (!port || !port.writable) throw new Error('串口未连接');
+  const w = port.writable.getWriter();
+  try { await w.write(new TextEncoder().encode(s)); } finally { w.releaseLock(); }
+}
+
+// 发送一条 AT 指令并等待 OK/ERROR；返回响应文本或 null（超时）
+async function sendAT(cmd, timeoutMs) {
+  const t = timeoutMs || 2500;
+  rxBuf = '';
+  const p = waitResponse(/OK|ERROR/, t);
+  await writeRaw(cmd + '\r');
+  return await p;
+}
+
+async function doConnect() {
+  if (!('serial' in navigator)) {
+    appendConnectMsg('当前浏览器不支持 Web Serial，请使用 Chrome 或 Edge。');
+    return;
+  }
+  $('btn-connect').disabled = true;
+  appendConnectMsg('正在打开串口...');
+  try {
+    port = await navigator.serial.requestPort();
+    const baud = parseInt($('baud').value, 10) || 115200;
+    await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
+    reading = true;
+    rxBuf = '';
+    readLoop();
+
+    connected = true;
+    // 初始化：文本模式 + GSM 字符集
+    await sendAT('AT+CMGF=1');
+    await sendAT('AT+CSCS="GSM"');
+    await sendAT('AT+CPMS?', 2000);
+
+    setBadge(true);
+    $('connect-view').style.display = 'none';
+    appendConnectMsg('');
+    $('app').style.display = 'flex';
+    smsList = [];
+    seenKeys = new Set();
+    await loadAllSms();
+    startPoll();
+    dbgAppendRaw('[已连接 ' + baud + ' 8N1]\n');
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    if (e && e.name === 'NotFoundError') appendConnectMsg('已取消选择串口。');
+    else appendConnectMsg('连接失败：' + msg);
+    await doDisconnect();
+  } finally {
+    $('btn-connect').disabled = false;
+  }
+}
+
+async function doDisconnect() {
+  reading = false;
+  stopPoll();
+  try { if (reader) await reader.cancel(); } catch (e) {}
+  try { if (port) await port.close(); } catch (e) {}
+  reader = null;
+  port = null;
+  connected = false;
+  setBadge(false);
+  $('app').style.display = 'none';
+  $('connect-view').style.display = 'flex';
+}
+
+$('btn-connect').addEventListener('click', doConnect);
+$('btn-disconnect').addEventListener('click', () => doDisconnect());
+
+// ==================== 短信 ====================
+function parseCmgl(buf) {
+  const out = [];
+  if (!buf || /ERROR/.test(buf) || !/\+CMGL/.test(buf)) return out;
+  let cur = null;
+  for (const ln of buf.split(/\r?\n/)) {
+    const m = ln.match(/^\+CMGL:\s*(\d+),"([^"]*)","([^"]*)"/);
+    if (m) {
+      if (cur) out.push(cur);
+      cur = { index: m[1], stat: m[2], from: m[3], time: '', body: '' };
+      const t = ln.match(/",,"([^"]+)"/);
+      if (t) cur.time = t[1];
+    } else if (cur && ln.trim() && !/^OK/.test(ln)) {
+      cur.body += ln.trim();
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+async function loadAllSms() {
+  if (busy) return;
+  busy = true;
+  try {
+    const resp = await sendAT('AT+CMGL="ALL"', 8000);
+    applySmsList(parseCmgl(resp));
+  } finally { busy = false; }
+}
+
+async function pollNewSms() {
+  if (busy || !connected) return;
+  busy = true;
+  try {
+    const resp = await sendAT('AT+CMGL="REC UNREAD"', 5000);
+    const list = parseCmgl(resp);
+    if (list.length) {
+      // 与已有列表合并（按 index 去重）
+      const map = {};
+      smsList.forEach(s => { map[s.index] = s; });
+      list.forEach(s => { map[s.index] = s; });
+      applySmsList(Object.keys(map).map(k => map[k]));
+    }
+  } catch (e) {
+    dbgAppendRaw('\n[轮询出错] ' + ((e && e.message) || e) + '\n');
+  } finally { busy = false; }
+}
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(pollNewSms, POLL_MS);
+}
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function applySmsList(list) {
+  if (!Array.isArray(list)) return;
+  let newCount = 0;
+  const normalized = list.map(s => ({
+    index: String(s.index),
+    from: s.from,
+    time: s.time,
+    body: decodeUcs2(s.body || ''),
+    unread: /REC UNREAD/.test(s.stat || '')
+  }));
+  normalized.sort((a, b) => (parseInt(b.index, 10) || 0) - (parseInt(a.index, 10) || 0));
+
+  normalized.forEach(s => {
+    const k = s.index + '|' + s.body;
+    if (!seenKeys.has(k)) {
+      seenKeys.add(k);
+      if (s.unread) newCount++;
+    }
+  });
+
+  if (newCount > 0) {
+    alertNewSms();
+    document.title = '(' + newCount + '条新短信) 格行随身WiFi 短信';
+    setTimeout(() => { document.title = '格行随身WiFi 短信助手'; }, 5000);
+  }
+
+  smsList = normalized;
+  if (currentDetail) {
+    const upd = smsList.find(x => x.index === currentDetail.index);
+    if (upd) { currentDetail = upd; $('d-body').textContent = upd.body; $('d-time').textContent = fmtTime(upd.time); }
+    else backToList();
+  }
+  renderList();
+}
+
+function renderList() {
+  $('count').textContent = smsList.length;
+  $('updated').textContent = new Date().toLocaleTimeString();
+  const listEl = $('list');
+  if (!smsList.length) {
+    listEl.innerHTML = '<div class="empty">SIM 卡里还没有短信<br>来短信会自动出现在这里</div>';
+    return;
+  }
+  listEl.innerHTML = smsList.map(s => {
+    const preview = (s.body || '').replace(/\n/g, ' ');
+    const name = contacts[s.from];
+    const title = escapeHtml(name || s.from) + (name ? '<span class="num">' + escapeHtml(s.from) + '</span>' : '');
+    return '<div class="item ' + (s.unread ? 'new' : '') + '" data-idx="' + escapeHtml(s.index) + '">' +
+      '<div class="avatar">' + escapeHtml(avatarChar(s.from)) + '</div>' +
+      '<div class="mid"><div class="from">' + title + '</div>' +
+      '<div class="preview">' + escapeHtml(preview) + '</div></div>' +
+      '<div class="time">' + escapeHtml(fmtTime(s.time)) + '</div></div>';
+  }).join('');
+}
+
+$('list').addEventListener('click', e => {
+  const item = e.target.closest('.item');
+  if (!item) return;
+  const sms = smsList.find(x => x.index === item.dataset.idx);
+  if (sms) showDetail(sms);
+});
+
+function showDetail(sms) {
+  currentDetail = sms;
+  const name = contacts[sms.from];
+  $('d-from').textContent = name ? (name + '  ' + sms.from) : sms.from;
+  $('d-time').textContent = fmtTime(sms.time);
+  $('d-body').textContent = sms.body;
+  $('reply-input').value = '';
+  updateCharCount();
+  $('send-status').textContent = '';
+  $('btn-send').className = 'send-btn';
+  $('btn-send').disabled = false;
+  $('btn-copy').textContent = '复制';
+  $('btn-contact').textContent = name ? '改备注' : '备注';
+  $('list-view').style.display = 'none';
+  $('detail-view').style.display = 'flex';
+  $('d-body').scrollTop = 0;
+  markRead(sms.index);   // 用 AT+CMGR 让 SIM 卡把该条标记为已读
+}
+
+function backToList() {
+  currentDetail = null;
+  $('detail-view').style.display = 'none';
+  $('list-view').style.display = 'block';
+  renderList();
+}
+
+$('btn-back').addEventListener('click', backToList);
+
+async function markRead(index) {
+  const item = smsList.find(x => x.index === index);
+  if (item && item.unread) { item.unread = false; renderList(); }
+  if (busy) return;
+  busy = true;
+  try { await sendAT('AT+CMGR=' + index, 4000); } catch (e) {}
+  busy = false;
+}
+
+function updateCharCount() {
+  const n = $('reply-input').value.length;
+  const el = $('char-count');
+  el.textContent = n > 70 ? n + '/70（将分 ' + Math.ceil(n / 70) + ' 条发送）' : n + '/70';
+  el.style.color = n > 70 ? '#fbbf24' : '#64748b';
+}
+
+$('reply-input').addEventListener('input', updateCharCount);
+
+async function doSendSms(to, body) {
+  const parts = splitBody(body, 70);
+  for (let i = 0; i < parts.length; i++) {
+    const ok = await sendOneSms(to, parts[i]);
+    if (!ok) return '第 ' + (i + 1) + ' 条发送失败';
+  }
+  return 'OK';
+}
+
+async function sendOneSms(to, body) {
+  await sendAT('AT+CSCS="UCS2"', 2000);
+  rxBuf = '';
+  const promptWait = waitResponse(/>/, 4000);
+  await writeRaw('AT+CMGS="' + encodeUcs2(to) + '"\r');
+  const prompt = await promptWait;
+  if (!prompt) {
+    await sendAT('AT+CSCS="GSM"', 1500);
+    return false;
+  }
+  rxBuf = '';
+  const okWait = waitResponse(/OK|ERROR/, 15000);
+  await writeRaw(encodeUcs2(body) + '\x1A');
+  const resp = await okWait;
+  await sendAT('AT+CSCS="GSM"', 1500);
+  return !!(resp && /OK/.test(resp));
+}
+
+async function sendReply() {
+  const body = $('reply-input').value.trim();
+  if (!body || !currentDetail) return;
+  if (!connected) { $('send-status').textContent = '设备未连接'; return; }
+  const btn = $('btn-send');
+  btn.disabled = true;
+  $('send-status').textContent = '发送中...';
+  const r = await doSendSms(currentDetail.from, body);
+  if (r === 'OK') {
+    $('send-status').textContent = '已发送';
+    btn.className = 'send-btn ok';
+  } else {
+    $('send-status').textContent = '发送失败：' + r;
+    btn.className = 'send-btn fail';
+  }
+  btn.disabled = false;
+}
+
+$('btn-send').addEventListener('click', sendReply);
+$('reply-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendReply();
+});
+
+$('btn-delete').addEventListener('click', async () => {
+  if (!currentDetail) return;
+  const idx = currentDetail.index;
+  if (!confirm('确定删除该短信？将同时从 SIM 卡中删除。')) return;
+  if (busy) return;
+  busy = true;
+  try { await sendAT('AT+CMGD=' + idx, 5000); } catch (e) {}
+  busy = false;
+  smsList = smsList.filter(s => s.index !== idx);
+  backToList();
+});
+
+$('btn-contact').addEventListener('click', () => {
+  if (!currentDetail) return;
+  const from = currentDetail.from;
+  const name = prompt('设置备注名（留空则清除）', contacts[from] || '');
+  if (name === null) return;
+  const clean = name.trim();
+  if (clean) contacts[from] = clean; else delete contacts[from];
+  saveContacts();
+  $('btn-contact').textContent = clean ? '改备注' : '备注';
+  $('d-from').textContent = clean ? (clean + '  ' + from) : from;
+  renderList();
+});
+
+$('btn-copy').addEventListener('click', async () => {
+  if (!currentDetail) return;
+  const text = '来自: ' + currentDetail.from + '\n时间: ' + fmtTime(currentDetail.time) + '\n\n' + currentDetail.body;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) {}
+  }
+  $('btn-copy').textContent = ok ? '已复制' : '复制失败';
+  setTimeout(() => { $('btn-copy').textContent = '复制'; }, 1500);
+});
+
+// ==================== 标签切换 ====================
+$('tab-sms').addEventListener('click', () => {
+  $('tab-sms').classList.add('active');
+  $('tab-debug').classList.remove('active');
+  $('sms-view').style.display = 'flex';
+  $('debug-view').style.display = 'none';
+  dbgViewActive = false;
+});
+$('tab-debug').addEventListener('click', () => {
+  $('tab-debug').classList.add('active');
+  $('tab-sms').classList.remove('active');
+  $('debug-view').style.display = 'flex';
+  $('sms-view').style.display = 'none';
+  dbgViewActive = true;
+  dbgParse(rxBuf);   // 切过来时先解析已有数据
+});
+
+// ==================== AT 调试 ====================
+function dbgAppendRaw(text) {
+  if (rxBuf.length > 40000) rxBuf = rxBuf.slice(-20000);
+  if (!dbgViewActive) return;   // 调试页不可见时不刷日志，避免短信轮询刷屏
+  const el = $('dbg-log');
+  el.value += text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{2,}/g, '\n');
+  if (el.value.length > 60000) el.value = el.value.slice(-40000);
+  el.scrollTop = el.scrollHeight;
+  dbgParse(rxBuf);
+}
+
+async function dbgSend(cmd) {
+  if (!cmd) return;
+  if (!connected) { alert('请先连接设备。'); return; }
+  if ($('dbg-echo').checked) dbgAppendRaw('> ' + cmd + '\n');
+  if (busy) return;
+  busy = true;
+  try {
+    rxBuf = '';
+    await writeRaw(cmd + '\r');
+    await waitResponse(/OK|ERROR/, 4000);
+  } catch (e) {
+    dbgAppendRaw('[发送失败] ' + ((e && e.message) || e) + '\n');
+  } finally { busy = false; }
+}
+
+function dbgParse(buf) {
+  const pick = (prefix) => {
+    const i = buf.lastIndexOf(prefix);
+    if (i < 0) return null;
+    const m = buf.slice(i + prefix.length).split(/\r|\n/)[0];
+    return m ? m.trim() : null;
+  };
+  let v;
+  if ((v = pick('+CGSN:'))) $('dbg-imei').value = v;
+  if ((v = pick('*MRD_SN:'))) $('dbg-sn').value = v;
+  if ((v = pick('*MRD_WIFIID:'))) $('dbg-mac').value = v.replace(/:/g, '');
+  const bi = buf.lastIndexOf('*BAND:');
+  if (bi >= 0) {
+    const line = buf.slice(bi + 6).split(/\r|\n/)[0].trim();
+    if (line) { dbgBandStr = line; dbgShowBand(line); }
+  }
+}
+
+function dbgShowBand(line) {
+  $('dbg-band-cur').textContent = line;
+  const parts = line.split(',');
+  const high = parseInt(parts[3], 10);
+  const low = parseInt(parts[4], 10);
+  if (!isNaN(high) || !isNaN(low)) {
+    const checked = [];
+    [38, 39, 40, 41].forEach(b => { if ((high || 0) & Math.pow(2, b - 33)) checked.push(b); });
+    [1, 3, 5, 8].forEach(b => { if ((low || 0) & Math.pow(2, b - 1)) checked.push(b); });
+    document.querySelectorAll('#dbg-bands input').forEach(x => {
+      x.checked = checked.indexOf(parseInt(x.value, 10)) >= 0;
+    });
+  }
+}
+
+$('dbg-bands').innerHTML = DBG_BANDS.map(b =>
+  '<label><input type="checkbox" value="' + b + '"> LTE B' + b + '</label>'
+).join('');
+
+$('dbg-read-band').addEventListener('click', () => dbgSend('AT*BAND?'));
+
+$('dbg-lock-band').addEventListener('click', () => {
+  if (!dbgBandStr) { alert('请先点「读取频段」获取当前参数，再锁定。'); return; }
+  const checked = [...document.querySelectorAll('#dbg-bands input:checked')].map(x => parseInt(x.value, 10));
+  if (!checked.length) { alert('请至少勾选一个频段。'); return; }
+  if (!confirm('将锁定：' + checked.map(b => 'B' + b).join(', ') + '\n\n锁定后可能暂时断网，确定执行？')) return;
+  let high = 0, low = 0;
+  checked.forEach(b => {
+    if (b >= 38 && b <= 41) high += Math.pow(2, b - 33);
+    if (b <= 20) low += Math.pow(2, b - 1);
+  });
+  const s = dbgBandStr.split(',');
+  s[3] = high;
+  s[4] = low;
+  dbgSend('AT*BAND=' + s.join(','));
+});
+
+document.querySelectorAll('#debug-view [data-at]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const c = btn.getAttribute('data-confirm');
+    if (c && !confirm(c)) return;
+    dbgSend(btn.getAttribute('data-at'));
+  });
+});
+
+$('dbg-imei-w').addEventListener('click', () => {
+  const v = $('dbg-imei').value.trim();
+  if (!v) { alert('请先填写 IMEI。'); return; }
+  if (!confirm('确定写入 IMEI = ' + v + ' ？\n\n需先「删除」并开启工厂模式；写错可能导致设备无法上网。')) return;
+  dbgSend('AT*MRD_IMEI=W,0,01JAN1970,' + v);
+});
+
+$('dbg-sn-w').addEventListener('click', () => {
+  const v = $('dbg-sn').value.trim();
+  if (!v) { alert('请先填写 SN。'); return; }
+  if (!confirm('确定写入 SN = ' + v + ' ？\n\n需先「删除」并开启工厂模式。')) return;
+  dbgSend('AT*MRD_SN=W,0,01JAN1970,' + v);
+});
+
+$('dbg-mac-w').addEventListener('click', () => {
+  const v = $('dbg-mac').value.trim();
+  if (!v) { alert('请先填写 WiFi ID / MAC。'); return; }
+  if (!confirm('确定写入 WiFi ID = ' + v + ' ？\n\n需先「删除」并开启工厂模式。')) return;
+  dbgSend('AT*MRD_WIFIID=W,0,01JAN1970,' + v);
+});
+
+$('dbg-send').addEventListener('click', () => {
+  const v = $('dbg-custom').value.trim();
+  if (v) dbgSend(v);
+});
+
+$('dbg-custom').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const v = e.target.value.trim();
+    if (v) dbgSend(v);
+  }
+});
+
+$('dbg-clear').addEventListener('click', () => { $('dbg-log').value = ''; rxBuf = ''; });
+
+// ==================== 启动 ====================
+function appendConnectMsg(msg) {
+  $('connect-msg').textContent = msg || '';
+}
+
+loadLocal();
+pickChineseVoice();
+if ('speechSynthesis' in window) {
+  speechSynthesis.onvoiceschanged = () => { zhVoice = null; pickChineseVoice(); };
+}
+$('btn-sound').textContent = soundOn ? '语音：开' : '语音：关';
+$('btn-sound').className = 'sound ' + (soundOn ? 'on' : 'off');
+setBadge(false);
+renderList();
+
+if (!('serial' in navigator)) {
+  appendConnectMsg('当前浏览器不支持 Web Serial 串口功能，请改用 Chrome 或 Edge（Chromium 内核）打开本页。');
+}
+if (location.protocol === 'file:') {
+  appendConnectMsg('当前是 file:// 方式打开，浏览器不允许访问串口。请通过 https 或 http://localhost 访问本页。');
+}
+</script>
+</body>
+</html>
