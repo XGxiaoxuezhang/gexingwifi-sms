@@ -2,136 +2,403 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>格行随身WiFi 短信助手</title>
 <meta name="description" content="纯前端随身WiFi 短信助手：浏览器通过 Web Serial 直连串口收发短信、调试 AT 指令，无需安装任何后端。">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, "Microsoft YaHei", sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; display:flex; flex-direction:column; }
-  .header { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid #1e293b; background:#0b1220; }
-  .header h1 { font-size:17px; font-weight:600; flex:1; }
-  .header h1 small { font-size:12px; color:#64748b; font-weight:400; margin-left:6px; }
-  .badge { padding:3px 12px; border-radius:999px; font-size:12px; background:#475569; color:#e2e8f0; }
-  .badge.on { background:#059669; color:#fff; }
-  .sound { border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
-  .sound.on { background:#059669; color:#fff; }
-  .sound.off { background:#334155; color:#94a3b8; }
-  .act { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; }
-  .act:hover { background:#475569; }
-  .btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:14px; cursor:pointer; }
-  .btn:hover { background:#1d4ed8; }
-  .btn:disabled { background:#334155; color:#64748b; cursor:not-allowed; }
-  .btn.ghost { background:#334155; color:#cbd5e1; }
-  .btn.ghost:hover { background:#475569; }
-  .btn.danger { background:#7f1d1d; color:#fecaca; }
-  .btn.danger:hover { background:#991b1b; }
+  :root {
+    --bg: #070b14;
+    --panel: #0d1320;
+    --panel-2: #141c2b;
+    --line: rgba(148, 163, 184, .13);
+    --text: #e7eef9;
+    --muted: #8598b1;
+    --muted-2: #5b6b82;
+    --blue: #3b82f6;
+    --cyan: #22d3ee;
+    --green: #10b981;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --grad: linear-gradient(135deg, #3b82f6, #22d3ee);
+    --grad-soft: linear-gradient(135deg, rgba(59,130,246,.18), rgba(34,211,238,.10));
+    --r: 14px;
+  }
 
-  .connect-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
-  .connect-card { width:100%; max-width:560px; background:#0b1220; border:1px solid #1e293b; border-radius:14px; padding:24px; }
-  .connect-card h2 { font-size:16px; margin-bottom:12px; }
-  .connect-card p { font-size:13px; color:#94a3b8; line-height:1.8; margin-bottom:10px; }
-  .connect-card ol { font-size:13px; color:#94a3b8; line-height:1.9; margin:0 0 14px 20px; }
-  .connect-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px; }
-  .connect-row label { font-size:13px; color:#94a3b8; }
-  select.inp, input.inp { background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; padding:8px 10px; font-family:inherit; }
-  input.inp:focus, select.inp:focus { outline:none; border-color:#38bdf8; }
-  .warn-box { background:#422006; border:1px solid #854d0e; color:#fde68a; border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.7; margin-top:14px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-  .tabs { display:flex; gap:4px; padding:0 20px; background:#0b1220; border-bottom:1px solid #1e293b; }
-  .tab { background:none; border:none; border-bottom:2px solid transparent; color:#94a3b8; font-size:14px; padding:10px 14px; cursor:pointer; }
-  .tab:hover { color:#cbd5e1; }
-  .tab.active { color:#38bdf8; border-bottom-color:#38bdf8; }
+  html, body { height: 100%; }
 
-  #app { display:none; flex-direction:column; flex:1; min-height:0; }
-  .stats { color:#64748b; font-size:12px; padding:6px 20px; border-bottom:1px solid #1e293b; }
-  #list-view { flex:1; overflow-y:auto; }
-  .item { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid #1e293b; cursor:pointer; }
-  .item:hover { background:#1e293b; }
-  .item.new { background:#172c4a; }
-  .avatar { width:40px; height:40px; border-radius:50%; background:#1d4ed8; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; flex-shrink:0; }
-  .item .mid { flex:1; min-width:0; }
-  .item .from { font-size:15px; font-weight:600; }
-  .item.new .from { color:#7dd3fc; }
-  .item .num { font-size:12px; color:#64748b; font-weight:400; margin-left:6px; }
-  .item .preview { font-size:13px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
-  .item .time { font-size:12px; color:#64748b; flex-shrink:0; }
-  .empty { color:#64748b; text-align:center; padding:70px 20px; line-height:2; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    display: flex; flex-direction: column;
+    background:
+      radial-gradient(900px 520px at 12% -12%, rgba(59,130,246,.16), transparent 62%),
+      radial-gradient(820px 480px at 92% -6%, rgba(34,211,238,.11), transparent 58%),
+      var(--bg);
+    background-attachment: fixed;
+    font-size: 14px;
+    line-height: 1.5;
+  }
 
-  #detail-view { display:none; flex-direction:column; flex:1; min-height:0; }
-  .detail-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #1e293b; background:#0b1220; }
-  .back { background:none; border:none; color:#7dd3fc; font-size:16px; cursor:pointer; padding:6px; }
-  .detail-head .meta { flex:1; min-width:0; }
-  .detail-head .dfrom { font-size:16px; font-weight:600; }
-  .detail-head .dtime { font-size:12px; color:#64748b; margin-top:2px; }
-  .detail-body { flex:1; overflow-y:auto; padding:24px 20px; line-height:1.9; font-size:16px; white-space:pre-wrap; word-break:break-all; }
-  .reply { border-top:1px solid #1e293b; padding:12px 16px; background:#0b1220; }
-  .reply textarea { width:100%; height:72px; background:#1e293b; border:1px solid #334155; border-radius:10px; color:#e2e8f0; font-size:14px; padding:10px; resize:none; font-family:inherit; }
-  .reply textarea:focus { outline:none; border-color:#38bdf8; }
-  .reply-bar { display:flex; align-items:center; gap:10px; margin-top:8px; }
-  .reply-bar .status { flex:1; font-size:12px; color:#94a3b8; }
-  .send-btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:9px 24px; font-size:14px; cursor:pointer; }
-  .send-btn:disabled { background:#334155; color:#94a3b8; cursor:not-allowed; }
-  .send-btn.ok { background:#059669; }
-  .send-btn.fail { background:#dc2626; }
-  .mini { background:none; border:1px solid #334155; color:#7dd3fc; border-radius:8px; padding:5px 12px; font-size:12px; cursor:pointer; flex-shrink:0; }
-  .mini:hover { border-color:#38bdf8; }
-  .mini.danger { color:#fca5a5; border-color:#4c1d1d; }
-  .mini.danger:hover { border-color:#dc2626; }
-  .char-count { font-size:12px; color:#64748b; }
-  .tip { color:#64748b; font-size:12px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(100,116,139,.32); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,.55); }
 
-  #debug-view { display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding:16px 20px 28px; }
-  .dbg-warn { background:#422006; border:1px solid #854d0e; color:#fde68a; border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.7; margin-bottom:16px; }
-  .dbg-section { margin-bottom:18px; }
-  .dbg-section h3 { font-size:13px; color:#94a3b8; font-weight:600; margin-bottom:10px; }
-  .dbg-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
-  .dbg-row > label { font-size:13px; color:#94a3b8; min-width:62px; }
-  .dbg-input { flex:1; min-width:150px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; padding:8px 10px; font-family:inherit; }
-  .dbg-input:focus { outline:none; border-color:#38bdf8; }
-  .dbg-btn { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; }
-  .dbg-btn:hover { background:#475569; }
-  .dbg-btn.primary { background:#2563eb; color:#fff; }
-  .dbg-btn.danger { background:#7f1d1d; color:#fecaca; }
-  .dbg-btn.danger:hover { background:#991b1b; }
-  .dbg-log { width:100%; height:200px; background:#020617; border:1px solid #1e293b; border-radius:8px; color:#a5f3fc; font-family:Consolas, "Courier New", monospace; font-size:12px; padding:10px; resize:vertical; white-space:pre-wrap; }
-  .dbg-bands { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
-  .dbg-bands label { display:flex; align-items:center; gap:4px; font-size:13px; color:#cbd5e1; }
+  button { font-family: inherit; }
+  input, select, textarea { font-family: inherit; }
+
+  /* ---------- 顶部栏 ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 20px;
+    background: rgba(9,13,22,.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 30;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .brand .logo {
+    width: 34px; height: 34px; border-radius: 11px;
+    background: var(--grad-soft);
+    box-shadow: inset 0 0 0 1px rgba(59,130,246,.22);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .brand .logo svg { width: 18px; height: 18px; stroke: #7dd3fc; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .brand h1 { font-size: 15px; font-weight: 600; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand h1 small { font-size: 11.5px; color: var(--muted-2); font-weight: 400; margin-left: 7px; letter-spacing: 0; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    background: rgba(100,116,139,.14); color: var(--muted);
+    transition: all .2s;
+  }
+  .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.on { background: rgba(16,185,129,.14); color: #34d399; box-shadow: inset 0 0 0 1px rgba(16,185,129,.22); }
+  .badge.on::before { box-shadow: 0 0 8px rgba(52,211,153,.9); }
+
+  .icon-btn {
+    background: rgba(148,163,184,.1); color: var(--muted);
+    border: none; border-radius: 10px; padding: 7px 13px;
+    font-size: 12.5px; cursor: pointer; transition: all .18s; white-space: nowrap;
+  }
+  .icon-btn:hover { background: rgba(148,163,184,.18); color: #cbd5e1; }
+  .icon-btn.on { background: rgba(16,185,129,.16); color: #34d399; box-shadow: inset 0 0 0 1px rgba(16,185,129,.25); }
+
+  /* ---------- 连接页 ---------- */
+  .connect-wrap { flex: 1; display: grid; place-items: center; padding: 28px 20px; overflow-y: auto; }
+  .connect-card {
+    width: 100%; max-width: 520px;
+    background: linear-gradient(180deg, rgba(20,28,43,.9), rgba(13,19,32,.9));
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 34px 30px 28px;
+    box-shadow: 0 30px 70px -30px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.04);
+    animation: rise .4s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .cc-icon {
+    width: 58px; height: 58px; border-radius: 18px; margin-bottom: 20px;
+    background: var(--grad-soft);
+    box-shadow: inset 0 0 0 1px rgba(59,130,246,.25), 0 12px 30px -14px rgba(59,130,246,.75);
+    display: grid; place-items: center;
+  }
+  .cc-icon svg { width: 27px; height: 27px; stroke: #93c5fd; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .connect-card h2 { font-size: 19px; font-weight: 600; margin-bottom: 6px; letter-spacing: .2px; }
+  .cc-sub { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+
+  .steps { display: flex; flex-direction: column; gap: 13px; margin-bottom: 26px; }
+  .step { display: flex; gap: 12px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .step b { color: #cbd5e1; font-weight: 500; }
+  .step .n {
+    flex-shrink: 0; width: 21px; height: 21px; border-radius: 7px; margin-top: 1px;
+    background: rgba(59,130,246,.14); color: #7dd3fc;
+    font-size: 11.5px; font-weight: 600; display: grid; place-items: center;
+  }
+
+  .connect-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .field { position: relative; flex-shrink: 0; }
+  select.sel {
+    appearance: none; -webkit-appearance: none;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 38px 12px 14px; font-size: 13.5px; cursor: pointer;
+  }
+  select.sel:focus { outline: none; border-color: rgba(59,130,246,.55); box-shadow: 0 0 0 3px rgba(59,130,246,.13); }
+  .field::after {
+    content: ''; position: absolute; right: 15px; top: 50%; width: 7px; height: 7px;
+    border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
+    transform: translateY(-70%) rotate(45deg); pointer-events: none;
+  }
+
+  .btn-primary {
+    flex: 1; min-width: 150px;
+    background: var(--grad); color: #fff; border: none; border-radius: 12px;
+    padding: 13px 26px; font-size: 14.5px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 12px 28px -12px rgba(59,130,246,.9);
+    transition: transform .16s, box-shadow .16s, filter .16s;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 16px 34px -14px rgba(59,130,246,1); }
+  .btn-primary:active { transform: translateY(0) scale(.99); }
+  .btn-primary:disabled { background: #26303f; color: #64748b; box-shadow: none; cursor: not-allowed; transform: none; }
+
+  .notice {
+    margin-top: 22px; padding: 13px 15px; border-radius: 13px;
+    background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.22);
+    color: #fcd34d; font-size: 12.5px; line-height: 1.8;
+  }
+  .notice b { color: #fde68a; }
+  #connect-msg { margin-top: 14px; font-size: 12.5px; color: var(--amber); min-height: 18px; }
+
+  /* ---------- 标签页 ---------- */
+  .tabs { display: flex; gap: 6px; padding: 12px 20px 0; }
+  .tab {
+    background: transparent; border: none; color: var(--muted);
+    padding: 9px 18px; border-radius: 11px; font-size: 13.5px; cursor: pointer;
+    transition: all .18s;
+  }
+  .tab:hover { color: #cbd5e1; background: rgba(148,163,184,.08); }
+  .tab.active { background: var(--grad-soft); color: #bae6fd; box-shadow: inset 0 0 0 1px rgba(59,130,246,.24); }
+
+  #app { display: none; flex-direction: column; flex: 1; min-height: 0; }
+
+  /* ---------- 列表 ---------- */
+  .stats { font-size: 12px; color: var(--muted-2); padding: 12px 20px 10px; }
+  .stats b { color: var(--muted); font-weight: 600; }
+
+  #list-view { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
+  .item {
+    display: flex; align-items: center; gap: 13px;
+    padding: 13px 14px; border-radius: 14px;
+    cursor: pointer; position: relative;
+    transition: background .16s, transform .16s;
+  }
+  .item:hover { background: rgba(148,163,184,.07); }
+  .item:active { transform: scale(.995); }
+  .item.unread { background: rgba(59,130,246,.08); }
+  .item.unread:hover { background: rgba(59,130,246,.12); }
+  .item.unread::before {
+    content: ''; position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 26px; border-radius: 3px; background: var(--grad);
+  }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0;
+    display: grid; place-items: center;
+    color: #fff; font-size: 16px; font-weight: 600;
+    box-shadow: 0 8px 20px -10px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .item .mid { flex: 1; min-width: 0; }
+  .item .from { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .item.unread .from { color: #93c5fd; }
+  .item .num { font-size: 11.5px; color: var(--muted-2); font-weight: 400; }
+  .item .preview { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .item .time { font-size: 11.5px; color: var(--muted-2); flex-shrink: 0; align-self: flex-start; margin-top: 3px; }
+
+  .empty { display: grid; place-items: center; text-align: center; padding: 76px 20px; gap: 4px; }
+  .empty svg { width: 54px; height: 54px; stroke: rgba(100,116,139,.5); fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 14px; }
+  .empty p { font-size: 14px; color: var(--muted); }
+  .empty span { font-size: 12.5px; color: var(--muted-2); }
+
+  /* ---------- 详情 ---------- */
+  #detail-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .detail-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    background: rgba(9,13,22,.66);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .back {
+    background: rgba(148,163,184,.1); border: none; color: #7dd3fc;
+    width: 32px; height: 32px; border-radius: 10px; font-size: 15px;
+    cursor: pointer; flex-shrink: 0; transition: background .16s;
+  }
+  .back:hover { background: rgba(148,163,184,.2); }
+  .detail-head .meta { flex: 1; min-width: 0; }
+  .detail-head .dfrom { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .detail-head .dtime { font-size: 11.5px; color: var(--muted-2); margin-top: 2px; }
+
+  .mini {
+    background: rgba(148,163,184,.1); border: none; color: #7dd3fc;
+    border-radius: 9px; padding: 6px 11px; font-size: 12px; cursor: pointer;
+    flex-shrink: 0; transition: all .16s;
+  }
+  .mini:hover { background: rgba(148,163,184,.2); }
+  .mini.danger { color: #fca5a5; }
+  .mini.danger:hover { background: rgba(239,68,68,.16); }
+
+  .detail-body { flex: 1; overflow-y: auto; padding: 26px 22px 30px; }
+  .bubble {
+    max-width: min(680px, 100%);
+    background: linear-gradient(180deg, rgba(30,41,59,.75), rgba(20,28,43,.75));
+    border: 1px solid var(--line);
+    border-radius: 18px 18px 18px 6px;
+    padding: 18px 20px; font-size: 15.5px; line-height: 1.95;
+    white-space: pre-wrap; word-break: break-word;
+    box-shadow: 0 16px 40px -24px rgba(0,0,0,.9);
+  }
+  .bubble-meta { font-size: 11.5px; color: var(--muted-2); margin: 10px 0 0 4px; }
+
+  .reply {
+    border-top: 1px solid var(--line); padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: rgba(9,13,22,.72);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .reply textarea {
+    width: 100%; height: 74px; resize: none;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 13px;
+    padding: 12px 14px; font-size: 14px; line-height: 1.6;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .reply textarea:focus { outline: none; border-color: rgba(59,130,246,.6); box-shadow: 0 0 0 3px rgba(59,130,246,.13); }
+  .reply-bar { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+  .reply-bar .status { flex: 1; font-size: 12.5px; color: var(--muted); }
+  .char-count { font-size: 12px; color: var(--muted-2); }
+  .send-btn {
+    background: var(--grad); color: #fff; border: none; border-radius: 11px;
+    padding: 10px 26px; font-size: 14px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 10px 24px -12px rgba(59,130,246,.9);
+    transition: transform .16s, filter .16s;
+  }
+  .send-btn:hover { transform: translateY(-1px); }
+  .send-btn:disabled { background: #26303f; color: #64748b; box-shadow: none; cursor: not-allowed; transform: none; }
+  .send-btn.ok { background: linear-gradient(135deg,#10b981,#059669); }
+  .send-btn.fail { background: linear-gradient(135deg,#ef4444,#b91c1c); }
+
+  /* ---------- AT 调试 ---------- */
+  #debug-view { display: none; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 30px; }
+  .dbg-warn {
+    background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.22);
+    color: #fcd34d; border-radius: 14px; padding: 13px 15px; font-size: 12.5px; line-height: 1.8; margin-bottom: 20px;
+  }
+  .dbg-warn b { color: #fde68a; }
+  .dbg-section { margin-bottom: 22px; }
+  .dbg-section h3 {
+    font-size: 12px; color: var(--muted-2); font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .dbg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+  .dbg-row > label { font-size: 12.5px; color: var(--muted); min-width: 62px; }
+  .dbg-input {
+    flex: 1; min-width: 150px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 11px;
+    padding: 10px 13px; font-size: 13px;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .dbg-input:focus { outline: none; border-color: rgba(59,130,246,.6); box-shadow: 0 0 0 3px rgba(59,130,246,.13); }
+  select.dbg-input { appearance: none; -webkit-appearance: none; cursor: pointer; }
+  .dbg-btn {
+    background: rgba(148,163,184,.1); color: #cbd5e1; border: none;
+    border-radius: 10px; padding: 9px 15px; font-size: 12.5px; cursor: pointer;
+    transition: all .16s;
+  }
+  .dbg-btn:hover { background: rgba(148,163,184,.2); }
+  .dbg-btn.primary { background: var(--grad); color: #fff; font-weight: 500; box-shadow: 0 10px 22px -12px rgba(59,130,246,.9); }
+  .dbg-btn.primary:hover { filter: brightness(1.06); }
+  .dbg-btn.danger { color: #fca5a5; background: rgba(239,68,68,.12); }
+  .dbg-btn.danger:hover { background: rgba(239,68,68,.22); }
+  .dbg-log {
+    width: 100%; height: 190px; resize: vertical;
+    background: #05080f; color: #86e5f5;
+    border: 1px solid var(--line); border-radius: 13px;
+    padding: 13px; font-family: Consolas, "SF Mono", "Courier New", monospace;
+    font-size: 12px; line-height: 1.65; white-space: pre-wrap;
+  }
+  .dbg-log:focus { outline: none; border-color: rgba(59,130,246,.5); }
+  .dbg-bands { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 12px; }
+  .dbg-bands label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: #cbd5e1;
+    background: rgba(148,163,184,.07); border-radius: 9px; padding: 7px 12px; cursor: pointer;
+    transition: background .16s;
+  }
+  .dbg-bands label:hover { background: rgba(148,163,184,.14); }
+  .dbg-bands input { accent-color: var(--blue); }
+  .tip { font-size: 12px; color: var(--muted-2); }
+  .tip .mono { font-family: Consolas, monospace; color: var(--muted); }
+
+  /* ---------- 移动端 ---------- */
+  @media (max-width: 640px) {
+    .topbar { padding: 11px 14px; gap: 8px; }
+    .brand h1 { font-size: 14px; }
+    .brand h1 small { display: none; }
+    .brand .logo { width: 30px; height: 30px; border-radius: 10px; }
+    .badge { padding: 4px 10px; font-size: 11.5px; }
+    .icon-btn { padding: 6px 11px; font-size: 12px; }
+    .tabs { padding: 10px 14px 0; }
+    .tab { padding: 8px 15px; font-size: 13px; }
+    .stats { padding: 10px 14px 8px; }
+    #list-view { padding: 0 8px 10px; }
+    .item { padding: 12px 11px; gap: 11px; border-radius: 12px; }
+    .avatar { width: 40px; height: 40px; border-radius: 12px; font-size: 15px; }
+    .connect-wrap { padding: 18px 14px; }
+    .connect-card { padding: 26px 20px 22px; border-radius: 18px; }
+    .connect-card h2 { font-size: 17px; }
+    .btn-primary { min-width: 100%; }
+    .field { width: 100%; }
+    select.sel { width: 100%; }
+    .detail-body { padding: 20px 14px 24px; }
+    .bubble { font-size: 15px; padding: 15px 16px; border-radius: 16px 16px 16px 5px; }
+    .detail-head { gap: 8px; padding: 10px 12px; }
+    #debug-view { padding: 4px 14px 24px; }
+    .dbg-row > label { min-width: 54px; font-size: 12px; }
+  }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>格行随身WiFi 短信助手<small>纯前端 · 无需后端</small></h1>
-  <button id="btn-sound" class="sound off">语音：关</button>
-  <button id="btn-disconnect" class="act" style="display:none">断开设备</button>
+<div class="topbar">
+  <div class="brand">
+    <span class="logo">
+      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
+    </span>
+    <h1>格行随身WiFi 短信助手<small>纯前端 · 数据不出本地</small></h1>
+  </div>
+  <button id="btn-sound" class="icon-btn">语音：关</button>
+  <button id="btn-disconnect" class="icon-btn" style="display:none">断开</button>
   <span class="badge" id="conn-badge">未连接</span>
 </div>
 
 <!-- 未连接时的引导 -->
 <div class="connect-wrap" id="connect-view">
   <div class="connect-card">
-    <h2>连接随身WiFi / 短信设备</h2>
-    <ol>
-      <li>用数据线把设备连到电脑，确认它出现在「设备管理器 → 端口」里</li>
-      <li>点下面的「连接设备」，在浏览器弹出的窗口中选择该串口</li>
-      <li>连接后即可收短信、发短信、调试 AT 指令</li>
-    </ol>
+    <div class="cc-icon">
+      <svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8zM12 17v5"/></svg>
+    </div>
+    <h2>连接短信设备</h2>
+    <p class="cc-sub">浏览器直连串口，短信数据不经过任何服务器</p>
+
+    <div class="steps">
+      <div class="step"><span class="n">1</span><span>用数据线连接随身WiFi，确认它出现在 <b>设备管理器 → 端口</b></span></div>
+      <div class="step"><span class="n">2</span><span>选择波特率（一般 <b>115200</b>），点「连接设备」</span></div>
+      <div class="step"><span class="n">3</span><span>在浏览器弹窗中选择该设备的 <b>AT 端口</b></span></div>
+    </div>
+
     <div class="connect-row">
-      <label>波特率</label>
-      <select class="inp" id="baud">
-        <option value="115200" selected>115200</option>
-        <option value="9600">9600</option>
-        <option value="57600">57600</option>
-        <option value="921600">921600</option>
-      </select>
-      <button class="btn" id="btn-connect">连接设备</button>
+      <div class="field">
+        <select class="sel" id="baud">
+          <option value="115200" selected>115200</option>
+          <option value="9600">9600</option>
+          <option value="57600">57600</option>
+          <option value="921600">921600</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="btn-connect">连接设备</button>
     </div>
-    <div class="warn-box">
-      必须使用 <b>Chrome / Edge 等 Chromium 内核浏览器</b>，并通过 <b>https 或 localhost</b> 打开本页
-      （Web Serial 的安全限制，直接双击 html 文件无法使用）。<br>
-      串口只能被一个程序占用，连接前请先关闭其他占用该串口的程序（含本项目的托盘监控）。
+    <div id="connect-msg"></div>
+
+    <div class="notice">
+      需使用 <b>Chrome / Edge</b> 等 Chromium 内核浏览器，并通过 <b>https 或 localhost</b> 打开本页
+      （浏览器安全限制，直接双击 html 文件无法访问串口）。<br>
+      串口同一时间只能被一个程序占用，连接前请先关闭其他占用该串口的程序。
     </div>
-    <p id="connect-msg" class="tip" style="margin-top:12px"></p>
   </div>
 </div>
 
@@ -143,7 +410,7 @@
   </div>
 
   <div id="sms-view" style="display:flex;flex-direction:column;flex:1;min-height:0">
-    <div class="stats">共 <b id="count">0</b> 条 · 上次刷新 <span id="updated">-</span> · 自动每 5 秒检查新短信</div>
+    <div class="stats">共 <b id="count">0</b> 条 · 上次刷新 <span id="updated">-</span> · 每 5 秒自动检查新短信</div>
 
     <div id="list-view">
       <div id="list"></div>
@@ -151,7 +418,7 @@
 
     <div id="detail-view">
       <div class="detail-head">
-        <button class="back" id="btn-back">← 返回</button>
+        <button class="back" id="btn-back" title="返回">←</button>
         <div class="meta">
           <div class="dfrom" id="d-from"></div>
           <div class="dtime" id="d-time"></div>
@@ -160,7 +427,10 @@
         <button class="mini" id="btn-copy">复制</button>
         <button class="mini danger" id="btn-delete">删除</button>
       </div>
-      <div class="detail-body" id="d-body"></div>
+      <div class="detail-body">
+        <div class="bubble" id="d-body"></div>
+        <div class="bubble-meta" id="d-meta"></div>
+      </div>
       <div class="reply">
         <textarea id="reply-input" placeholder="输入回复内容..."></textarea>
         <div class="reply-bar">
@@ -212,12 +482,12 @@
       <h3>频段（先「读取频段」，再勾选要锁定的频段）</h3>
       <div class="dbg-row">
         <button class="dbg-btn" id="dbg-read-band">读取频段</button>
-        <span class="tip">当前：<span id="dbg-band-cur">-</span></span>
+        <span class="tip">当前：<span class="mono" id="dbg-band-cur">-</span></span>
       </div>
       <div class="dbg-bands" id="dbg-bands"></div>
       <div class="dbg-row">
         <button class="dbg-btn danger" id="dbg-lock-band">锁定频段</button>
-        <span class="tip">显示的频段不一定支持，能成功锁定的频段才算支持</span>
+        <span class="tip">显示的频段不一定支持，能成功锁定的才算支持</span>
       </div>
     </div>
 
@@ -241,10 +511,10 @@
     <div class="dbg-section">
       <h3>收发日志</h3>
       <textarea class="dbg-log" id="dbg-log" readonly placeholder="连接设备后，收发的数据会显示在这里"></textarea>
-      <div class="dbg-row" style="margin-top:8px">
+      <div class="dbg-row" style="margin-top:9px">
         <button class="dbg-btn" id="dbg-clear">清空日志</button>
-        <label style="min-width:auto;display:flex;align-items:center;gap:5px;font-size:13px;color:#94a3b8">
-          <input type="checkbox" id="dbg-echo" checked> 显示发送内容
+        <label style="min-width:auto;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
+          <input type="checkbox" id="dbg-echo" checked style="accent-color:var(--blue)"> 显示发送内容
         </label>
       </div>
     </div>
@@ -256,6 +526,16 @@
 const DBG_BANDS = [1, 3, 5, 8, 38, 39, 40, 41];
 const NEW_SMS_TEXT = '您有新的短信，请注意查收';
 const POLL_MS = 5000;
+const AVATAR_GRADS = [
+  'linear-gradient(135deg,#6366f1,#8b5cf6)',
+  'linear-gradient(135deg,#0ea5e9,#3b82f6)',
+  'linear-gradient(135deg,#10b981,#059669)',
+  'linear-gradient(135deg,#f59e0b,#ef4444)',
+  'linear-gradient(135deg,#ec4899,#8b5cf6)',
+  'linear-gradient(135deg,#14b8a6,#0ea5e9)',
+  'linear-gradient(135deg,#f43f5e,#f97316)',
+  'linear-gradient(135deg,#8b5cf6,#6366f1)'
+];
 
 let port = null;
 let reader = null;
@@ -319,6 +599,14 @@ function displayName(from) { return contacts[from] || from; }
 function avatarChar(from) {
   const s = String(displayName(from) || '?').replace(/\s/g, '');
   return s ? s[s.length - 1] : '?';
+}
+
+// 按号码生成稳定的头像渐变色，同一发件人颜色始终一致
+function avatarGrad(from) {
+  const s = String(from || '?');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 9973;
+  return AVATAR_GRADS[h % AVATAR_GRADS.length];
 }
 
 // ==================== 本地存储 ====================
@@ -391,7 +679,7 @@ $('btn-sound').addEventListener('click', () => {
   }
   const b = $('btn-sound');
   b.textContent = soundOn ? '语音：开' : '语音：关';
-  b.className = 'sound ' + (soundOn ? 'on' : 'off');
+  b.className = 'icon-btn' + (soundOn ? ' on' : '');
 });
 
 // ==================== Web Serial 通信层 ====================
@@ -482,7 +770,6 @@ async function doConnect() {
     // 初始化：文本模式 + GSM 字符集
     await sendAT('AT+CMGF=1');
     await sendAT('AT+CSCS="GSM"');
-    await sendAT('AT+CPMS?', 2000);
 
     setBadge(true);
     $('connect-view').style.display = 'none';
@@ -513,7 +800,7 @@ async function doDisconnect() {
   connected = false;
   setBadge(false);
   $('app').style.display = 'none';
-  $('connect-view').style.display = 'flex';
+  $('connect-view').style.display = 'grid';
 }
 
 $('btn-connect').addEventListener('click', doConnect);
@@ -555,7 +842,6 @@ async function pollNewSms() {
     const resp = await sendAT('AT+CMGL="REC UNREAD"', 5000);
     const list = parseCmgl(resp);
     if (list.length) {
-      // 与已有列表合并（按 index 去重）
       const map = {};
       smsList.forEach(s => { map[s.index] = s; });
       list.forEach(s => { map[s.index] = s; });
@@ -604,26 +890,32 @@ function applySmsList(list) {
   smsList = normalized;
   if (currentDetail) {
     const upd = smsList.find(x => x.index === currentDetail.index);
-    if (upd) { currentDetail = upd; $('d-body').textContent = upd.body; $('d-time').textContent = fmtTime(upd.time); }
-    else backToList();
+    if (upd) {
+      currentDetail = upd;
+      $('d-body').textContent = upd.body;
+      $('d-time').textContent = fmtTime(upd.time);
+      $('d-meta').textContent = '来自 ' + displayName(upd.from) + ' · ' + fmtTime(upd.time);
+    } else backToList();
   }
   renderList();
 }
+
+const EMPTY_SVG = '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>';
 
 function renderList() {
   $('count').textContent = smsList.length;
   $('updated').textContent = new Date().toLocaleTimeString();
   const listEl = $('list');
   if (!smsList.length) {
-    listEl.innerHTML = '<div class="empty">SIM 卡里还没有短信<br>来短信会自动出现在这里</div>';
+    listEl.innerHTML = '<div class="empty">' + EMPTY_SVG + '<p>SIM 卡里还没有短信</p><span>来短信会自动出现在这里</span></div>';
     return;
   }
   listEl.innerHTML = smsList.map(s => {
     const preview = (s.body || '').replace(/\n/g, ' ');
     const name = contacts[s.from];
     const title = escapeHtml(name || s.from) + (name ? '<span class="num">' + escapeHtml(s.from) + '</span>' : '');
-    return '<div class="item ' + (s.unread ? 'new' : '') + '" data-idx="' + escapeHtml(s.index) + '">' +
-      '<div class="avatar">' + escapeHtml(avatarChar(s.from)) + '</div>' +
+    return '<div class="item ' + (s.unread ? 'unread' : '') + '" data-idx="' + escapeHtml(s.index) + '">' +
+      '<div class="avatar" style="background:' + avatarGrad(s.from) + '">' + escapeHtml(avatarChar(s.from)) + '</div>' +
       '<div class="mid"><div class="from">' + title + '</div>' +
       '<div class="preview">' + escapeHtml(preview) + '</div></div>' +
       '<div class="time">' + escapeHtml(fmtTime(s.time)) + '</div></div>';
@@ -643,6 +935,7 @@ function showDetail(sms) {
   $('d-from').textContent = name ? (name + '  ' + sms.from) : sms.from;
   $('d-time').textContent = fmtTime(sms.time);
   $('d-body').textContent = sms.body;
+  $('d-meta').textContent = '来自 ' + displayName(sms.from) + ' · ' + fmtTime(sms.time);
   $('reply-input').value = '';
   updateCharCount();
   $('send-status').textContent = '';
@@ -652,7 +945,7 @@ function showDetail(sms) {
   $('btn-contact').textContent = name ? '改备注' : '备注';
   $('list-view').style.display = 'none';
   $('detail-view').style.display = 'flex';
-  $('d-body').scrollTop = 0;
+  $('d-body').parentElement.scrollTop = 0;
   markRead(sms.index);   // 用 AT+CMGR 让 SIM 卡把该条标记为已读
 }
 
@@ -678,7 +971,7 @@ function updateCharCount() {
   const n = $('reply-input').value.length;
   const el = $('char-count');
   el.textContent = n > 70 ? n + '/70（将分 ' + Math.ceil(n / 70) + ' 条发送）' : n + '/70';
-  el.style.color = n > 70 ? '#fbbf24' : '#64748b';
+  el.style.color = n > 70 ? '#fbbf24' : '';
 }
 
 $('reply-input').addEventListener('input', updateCharCount);
@@ -755,6 +1048,7 @@ $('btn-contact').addEventListener('click', () => {
   saveContacts();
   $('btn-contact').textContent = clean ? '改备注' : '备注';
   $('d-from').textContent = clean ? (clean + '  ' + from) : from;
+  $('d-meta').textContent = '来自 ' + displayName(from) + ' · ' + fmtTime(currentDetail.time);
   renderList();
 });
 
@@ -929,7 +1223,7 @@ if ('speechSynthesis' in window) {
   speechSynthesis.onvoiceschanged = () => { zhVoice = null; pickChineseVoice(); };
 }
 $('btn-sound').textContent = soundOn ? '语音：开' : '语音：关';
-$('btn-sound').className = 'sound ' + (soundOn ? 'on' : 'off');
+$('btn-sound').className = 'icon-btn' + (soundOn ? ' on' : '');
 setBadge(false);
 renderList();
 
