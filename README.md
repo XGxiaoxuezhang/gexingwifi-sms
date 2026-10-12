@@ -1,6 +1,8 @@
-# 随身WiFi 短信助手
+# 格行随身WiFi 短信助手
 
-把 ASR 随身WiFi（或任何支持标准 AT 指令的短信猫 / 4G 模块）变成一台「短信中心」：
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+把格行随身WiFi（ASR 芯片方案，或其他任何支持标准 AT 指令的短信猫 / 4G 模块）变成一台「短信中心」：
 在电脑上实时收短信、来短信自动提醒、用网页收发短信，还能把网页开到手机上用。
 
 全流程 Windows 原生，**不需要安装 Python、Node 等任何运行时**。
