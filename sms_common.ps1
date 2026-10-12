@@ -222,26 +222,32 @@ function Split-SmsBody {
     return ,$parts
 }
 
-# 发送一条短信（AT+CMGS）：标准做法是 CSCS=UCS2 时号码也用 UCS2 编码，
-# 但部分模块要求号码保持原样，因此拿不到输入提示符时会自动用原始号码重试一次。
+# 判断正文能否用 GSM 字符集直接发送（纯 ASCII 兼容性最好，中文必须 UCS2）
+function Test-GsmSafe([string]$s) {
+    return ($s -match '^[\x20-\x7E\r\n]*$')
+}
+
+# 发送一条短信（AT+CMGS）：号码按原样传入（多数模块这样最稳），正文按 GSM/UCS2 自适应；
+# 若设备不给输入提示符，再用 UCS2 编码的号码重试一次。
 function Send-SMS($sp, [string]$to, [string]$body) {
-    $r = Send-SMS-Raw $sp (UCS2-Encode $to) $body
+    $enc = if (Test-GsmSafe $body) { 'GSM' } else { 'UCS2' }
+    $r = Send-SMS-Raw $sp $to $body $enc
     if ($r -ne 'NO_PROMPT') { return $r }
-    Write-Log "UCS2 号码未获得输入提示符，改用原始号码重试：$to" 'WARN'
-    $r2 = Send-SMS-Raw $sp $to $body
+    Write-Log "原始号码未获得输入提示符，改用 UCS2 号码重试：$to" 'WARN'
+    $r2 = Send-SMS-Raw $sp (UCS2-Encode $to) $body 'UCS2'
     if ($r2 -eq 'NO_PROMPT') {
-        return '失败：设备未就绪，没有返回输入提示符（已尝试 UCS2 与原始号码两种格式）'
+        return '失败：设备未就绪，没有返回输入提示符（已尝试原始与 UCS2 两种号码格式）'
     }
     return $r2
 }
 
 # 真正执行一次发送；'NO_PROMPT' 是内部标记，表示设备未给出 ">" 提示符
-function Send-SMS-Raw($sp, [string]$daHex, [string]$body) {
+function Send-SMS-Raw($sp, [string]$da, [string]$body, [string]$enc) {
     try {
-        $null = Send-AT $sp 'AT+CSCS="UCS2"' 800
-        $bodyHex = UCS2-Encode $body
+        $null = Send-AT $sp ("AT+CSCS=`"$enc`"") 800
+        $payload = if ($enc -eq 'UCS2') { UCS2-Encode $body } else { $body }
         $sp.DiscardInBuffer()
-        $sp.Write("AT+CMGS=`"$daHex`"" + [char]13)
+        $sp.Write("AT+CMGS=`"$da`"" + [char]13)
         $prompt = ''
         $deadline = (Get-Date).AddMilliseconds(5000)
         while ((Get-Date) -lt $deadline) {
@@ -253,7 +259,7 @@ function Send-SMS-Raw($sp, [string]$daHex, [string]$body) {
             $null = Send-AT $sp 'AT+CSCS="GSM"' 500
             return 'NO_PROMPT'
         }
-        $sp.Write($bodyHex + [char]0x1A)
+        $sp.Write($payload + [char]0x1A)
         Start-Sleep -Milliseconds 1500
         $resp = ''
         $deadline2 = (Get-Date).AddMilliseconds(10000)

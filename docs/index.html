@@ -805,6 +805,9 @@ async function readLoop() {
         if (value && value.length) {
           const text = dec.decode(value, { stream: true });
           onRx(text);
+          cdsBuf += text;
+          if (cdsBuf.length > 4000) cdsBuf = cdsBuf.slice(-2000);
+          if (cdsWatcher) tryFinishCds();
           dbgAppendRaw(text);
         }
       }
@@ -852,9 +855,10 @@ async function doConnect() {
     readLoop();
 
     connected = true;
-    // 初始化：文本模式 + GSM 字符集
+    // 初始化：文本模式 + GSM 字符集 + 开启短信状态报告（用于确认是否真的送达）
     await sendAT('AT+CMGF=1');
     await sendAT('AT+CSCS="GSM"');
+    await sendAT('AT+CNMI=2,1,0,1,0', 2000);
 
     setBadge(true);
     $('connect-view').style.display = 'none';
@@ -1065,35 +1069,42 @@ function updateCharCount() {
 
 $('reply-input').addEventListener('input', updateCharCount);
 
+// 正文是否能用 GSM 字符集直接发（纯 ASCII 兼容性最好，中文必须 UCS2）
+function isGsmSafe(s) { return /^[\x20-\x7E\r\n]*$/.test(s); }
+
+// 返回 { ok, msg } 或 { ok:true, delivery } —— delivery: true=已送达 / null=无报告 / 数字=失败码
 async function doSendSms(to, body, onProgress) {
   const parts = splitBody(body, 70);
   for (let i = 0; i < parts.length; i++) {
     const tag = parts.length > 1 ? ('第 ' + (i + 1) + '/' + parts.length + ' 条，') : '';
     if (onProgress) onProgress(tag + '正在与设备握手...');
     const r = await sendOneSms(to, parts[i], (m) => { if (onProgress) onProgress(tag + m); });
-    if (r !== 'OK') return tag + r;
+    if (r !== 'OK') return { ok: false, msg: tag + r };
   }
-  return 'OK';
+  // 全部提交成功，再等网络的送达确认（能确切知道对方是否收到）
+  if (onProgress) onProgress('设备已接受，等待网络送达确认（最多 15 秒）...');
+  const st = await waitCds(15000);
+  return { ok: true, delivery: (st === null) ? null : (st === 0 ? true : st) };
 }
 
 // 返回 'OK' 或失败原因（含设备返回的原始信息，便于定位）
 async function sendOneSms(to, body, onProgress) {
-  // 标准做法：CSCS=UCS2 时号码也按 UCS2 编码（"10010" -> "00310030003000310030"）
-  const r1 = await sendViaSms(encodeUcs2(to), body, onProgress);
+  // 先按最常见的做法：号码原样传入，正文按 GSM/UCS2 自适应
+  const enc = isGsmSafe(body) ? 'GSM' : 'UCS2';
+  const r1 = await sendViaSms(to, body, enc, onProgress);
   if (r1.ok) return 'OK';
-  // 设备连输入提示符都不给，通常是不认 UCS2 号码，用原始号码再试一次
-  if (r1.noPrompt) {
-    if (onProgress) onProgress('未获提示符，改用原始号码重试...');
-    const r2 = await sendViaSms(to, body, onProgress);
-    if (r2.ok) return 'OK';
-    return r2.msg;
-  }
-  return r1.msg;
+  if (!r1.noPrompt) return r1.msg;   // 设备明确报错，不再折腾
+  // 设备连提示符都不给，说明不认这种号码格式，改用 UCS2 编码的号码重试
+  if (onProgress) onProgress('未获提示符，改用 UCS2 号码重试...');
+  const r2 = await sendViaSms(encodeUcs2(to), body, 'UCS2', onProgress);
+  if (r2.ok) return 'OK';
+  return r2.msg;
 }
 
-async function sendViaSms(daHex, body, onProgress) {
+async function sendViaSms(daHex, body, enc, onProgress) {
   try {
-    await sendAT('AT+CSCS="UCS2"', 2000);
+    await sendAT('AT+CSCS="' + enc + '"', 2000);
+    const payload = (enc === 'UCS2') ? encodeUcs2(body) : body;
     rxBuf = '';
     if (onProgress) onProgress('等待设备输入提示符...');
     const promptWait = waitResponse(/>/, 5000);
@@ -1106,7 +1117,7 @@ async function sendViaSms(daHex, body, onProgress) {
     rxBuf = '';
     if (onProgress) onProgress('提示符已收到，正在提交内容...');
     const okWait = waitResponse(/OK|ERROR/, 12000);
-    await writeRaw(encodeUcs2(body) + '\x1A');
+    await writeRaw(payload + '\x1A');
     const resp = await okWait;
     await sendAT('AT+CSCS="GSM"', 1500);
     if (resp && /OK/.test(resp) && !/ERROR/.test(resp)) return { ok: true };
@@ -1115,6 +1126,32 @@ async function sendViaSms(daHex, body, onProgress) {
   } catch (e) {
     return { ok: false, noPrompt: false, msg: '异常：' + ((e && e.message) || e) };
   }
+}
+
+// ---------- 网络送达确认（+CDS 状态报告） ----------
+// 末尾字段是状态码：0 = 对方已收到；其他数字是失败原因
+let cdsWatcher = null;
+let cdsBuf = '';
+
+function tryFinishCds() {
+  const i = cdsBuf.lastIndexOf('+CDS:');
+  if (i < 0) return;
+  const line = cdsBuf.slice(i).split(/\r|\n/)[0];
+  const nums = line.match(/\d+/g);
+  if (!nums || nums.length < 3) return;
+  const st = parseInt(nums[nums.length - 1], 10);
+  const w = cdsWatcher;
+  cdsWatcher = null;
+  clearTimeout(w.timer);
+  w.resolve(st);
+}
+
+function waitCds(timeoutMs) {
+  return new Promise(resolve => {
+    cdsBuf = '';
+    const timer = setTimeout(() => { cdsWatcher = null; resolve(null); }, timeoutMs);
+    cdsWatcher = { resolve, timer };
+  });
 }
 
 async function sendReply() {
@@ -1128,13 +1165,14 @@ async function sendReply() {
   busy = true;   // 独占串口，避免与轮询抢串口
   try {
     const r = await doSendSms(currentDetail.from, body, (m) => { $('send-status').textContent = m; });
-    if (r === 'OK') {
-      $('send-status').textContent = '✓ 已发送';
-      btn.className = 'send-btn ok';
+    if (r.ok) {
+      if (r.delivery === true) { $('send-status').textContent = '✓ 已送达：网络确认对方已收到'; btn.className = 'send-btn ok'; }
+      else if (r.delivery === null) { $('send-status').textContent = '⚠ 设备已接受，但没有收到送达确认'; btn.className = 'send-btn ok'; }
+      else { $('send-status').textContent = '✗ 已提交但未送达，失败码 ' + r.delivery; btn.className = 'send-btn fail'; }
       $('reply-input').value = '';
       updateCharCount();
     } else {
-      $('send-status').textContent = '✗ ' + r;
+      $('send-status').textContent = '✗ ' + r.msg;
       btn.className = 'send-btn fail';
     }
   } catch (e) {
@@ -1261,14 +1299,22 @@ async function composeSend() {
   busy = true;   // 独占串口，避免与 5 秒一次的短信轮询互相打架
   try {
     const r = await doSendSms(to, body, (m) => { status.textContent = m; });
-    if (r === 'OK') {
-      status.textContent = '✓ 设备已接受，短信已提交给 ' + to + '（若对方是 10010 等，回复可能较慢或不回复）';
-      btn.className = 'send-btn ok';
+    if (r.ok) {
+      if (r.delivery === true) {
+        status.textContent = '✓ 已送达：网络确认对方已收到';
+        btn.className = 'send-btn ok';
+      } else if (r.delivery === null) {
+        status.textContent = '⚠ 设备已接受，但没收到送达确认。若对方一直没回，请在 AT 调试页查 AT+CSCA?（短信中心号码）';
+        btn.className = 'send-btn ok';
+      } else {
+        status.textContent = '✗ 设备已接受但未送达，失败码 ' + r.delivery + '（短信中心不可达 / 卡被限制发送）';
+        btn.className = 'send-btn fail';
+      }
       $('compose-text').value = '';
       updateComposeCount();
       pollNewSms();
     } else {
-      status.textContent = '✗ ' + r;
+      status.textContent = '✗ ' + r.msg;
       btn.className = 'send-btn fail';
     }
   } catch (e) {
