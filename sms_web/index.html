@@ -55,6 +55,36 @@
   .copy-btn.danger:hover { border-color:#dc2626; }
   .char-count { font-size:12px; color:#64748b; }
   .tip { color:#64748b; font-size:12px; }
+
+  /* 标签页 */
+  .tabs { display:flex; gap:4px; padding:0 20px; background:#0b1220; border-bottom:1px solid #1e293b; }
+  .tab { background:none; border:none; border-bottom:2px solid transparent; color:#94a3b8; font-size:14px; padding:10px 14px; cursor:pointer; }
+  .tab:hover { color:#cbd5e1; }
+  .tab.active { color:#38bdf8; border-bottom-color:#38bdf8; }
+  #sms-app { display:flex; flex-direction:column; flex:1; min-height:0; }
+
+  /* 设备调试面板 */
+  #debug-app { display:none; flex-direction:column; flex:1; min-height:0; overflow-y:auto; padding:16px 20px 28px; }
+  .dbg-warn { background:#422006; border:1px solid #854d0e; color:#fde68a; border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.7; margin-bottom:16px; }
+  .dbg-section { margin-bottom:18px; }
+  .dbg-section h3 { font-size:13px; color:#94a3b8; font-weight:600; margin-bottom:10px; }
+  .dbg-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .dbg-row > label { font-size:13px; color:#94a3b8; min-width:62px; }
+  .dbg-input { flex:1; min-width:150px; background:#1e293b; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; padding:8px 10px; font-family:inherit; }
+  .dbg-input:focus { outline:none; border-color:#38bdf8; }
+  .dbg-btn { background:#334155; color:#cbd5e1; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; }
+  .dbg-btn:hover { background:#475569; }
+  .dbg-btn.primary { background:#2563eb; color:#fff; }
+  .dbg-btn.primary:hover { background:#1d4ed8; }
+  .dbg-btn.danger { background:#7f1d1d; color:#fecaca; }
+  .dbg-btn.danger:hover { background:#991b1b; }
+  .dbg-btn:disabled { background:#1e293b; color:#64748b; cursor:not-allowed; }
+  .dbg-status { font-size:12px; padding:4px 12px; border-radius:999px; }
+  .dbg-status.off { background:#334155; color:#94a3b8; }
+  .dbg-status.on { background:#059669; color:#fff; }
+  .dbg-log { width:100%; height:220px; background:#020617; border:1px solid #1e293b; border-radius:8px; color:#a5f3fc; font-family:Consolas, "Courier New", monospace; font-size:12px; padding:10px; resize:vertical; white-space:pre-wrap; }
+  .dbg-bands { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
+  .dbg-bands label { display:flex; align-items:center; gap:4px; font-size:13px; color:#cbd5e1; }
 </style>
 </head>
 <body>
@@ -65,6 +95,13 @@
   <button id="btn-sound" class="sound off">语音：关</button>
   <span class="badge off" id="live">连接中</span>
 </div>
+
+<div class="tabs">
+  <button class="tab active" id="tab-sms">短信</button>
+  <button class="tab" id="tab-debug">设备调试</button>
+</div>
+
+<div id="sms-app">
 <div class="stats">共 <b id="count">0</b> 条 · 上次刷新 <span id="updated">-</span> · <span class="tip" id="conn-tip">新短信语音提醒用右上角按钮开关</span></div>
 
 <div id="list-view">
@@ -89,6 +126,113 @@
       <span class="status" id="send-status"></span>
       <span class="char-count" id="char-count">0/70</span>
       <button class="send-btn" id="btn-send">发送</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="debug-app">
+  <div class="dbg-warn">
+    <b>调试须知</b><br>
+    · 进入本页会自动暂停短信监控（把串口让给浏览器），切回「短信」标签或关闭页面即自动恢复。<br>
+    · 「删除 / 写入」IMEI、SN、WiFi ID 需先开启工厂模式，且要先「删除」再「写入」；写错可能导致设备无法上网。<br>
+    · 「锁定频段」「重启」会中断当前网络，请确认后再操作。<br>
+    · 需要 Chrome / Edge 等 Chromium 内核浏览器，并通过 127.0.0.1 或 HTTPS 访问本页。
+  </div>
+
+  <div class="dbg-section">
+    <h3>串口连接</h3>
+    <div class="dbg-row">
+      <button class="dbg-btn primary" id="dbg-connect">连接设备</button>
+      <button class="dbg-btn" id="dbg-disconnect" disabled>断开</button>
+      <span class="dbg-status off" id="dbg-status">未连接</span>
+    </div>
+    <div class="dbg-row">
+      <label>波特率</label>
+      <select class="dbg-input" id="dbg-baud" style="flex:none;min-width:120px">
+        <option value="115200" selected>115200</option>
+        <option value="9600">9600</option>
+        <option value="57600">57600</option>
+        <option value="921600">921600</option>
+      </select>
+      <label>行尾</label>
+      <select class="dbg-input" id="dbg-eol" style="flex:none;min-width:120px">
+        <option value="crlfcrlf" selected>\r\r\n</option>
+        <option value="crlf">\r\n</option>
+        <option value="cr">\r</option>
+      </select>
+    </div>
+    <div class="dbg-row"><span class="tip" id="dbg-hint">点击「连接设备」后浏览器会弹出串口选择框，请选择设备的 AT 端口。</span></div>
+  </div>
+
+  <div class="dbg-section">
+    <h3>设备信息（写号前先「删除」，并确保已开启工厂模式）</h3>
+    <div class="dbg-row">
+      <label>IMEI</label>
+      <input class="dbg-input" id="dbg-imei" placeholder="IMEI">
+      <button class="dbg-btn" data-at="AT+CGSN">读取</button>
+      <button class="dbg-btn danger" data-at="AT*MRD_IMEI=D" data-confirm="确定删除 IMEI？">删除</button>
+      <button class="dbg-btn danger" id="dbg-imei-w">写入</button>
+    </div>
+    <div class="dbg-row">
+      <label>SN</label>
+      <input class="dbg-input" id="dbg-sn" placeholder="仅支持有 SN 号的设备">
+      <button class="dbg-btn" data-at="AT*MRD_SN?">读取</button>
+      <button class="dbg-btn danger" data-at="AT*MRD_SN=D" data-confirm="确定删除 SN？">删除</button>
+      <button class="dbg-btn danger" id="dbg-sn-w">写入</button>
+    </div>
+    <div class="dbg-row">
+      <label>WiFi ID</label>
+      <input class="dbg-input" id="dbg-mac" placeholder="WiFi MAC（写入可不带冒号）">
+      <button class="dbg-btn" data-at="AT*MRD_WIFIID?">读取</button>
+      <button class="dbg-btn danger" data-at="AT*MRD_WIFIID=D" data-confirm="确定删除 WiFi ID？">删除</button>
+      <button class="dbg-btn danger" id="dbg-mac-w">写入</button>
+    </div>
+    <div class="dbg-row">
+      <label>工厂模式</label>
+      <button class="dbg-btn danger" data-at="AT*PROD=1" data-confirm="进入工厂模式后才能写号，确定开启？">开启</button>
+      <button class="dbg-btn" data-at="AT*PROD=0">退出</button>
+    </div>
+  </div>
+
+  <div class="dbg-section">
+    <h3>频段（先「读取频段」，再勾选要锁定的频段）</h3>
+    <div class="dbg-row">
+      <button class="dbg-btn" id="dbg-read-band">读取频段</button>
+      <span class="tip">当前：<span id="dbg-band-cur">-</span></span>
+    </div>
+    <div class="dbg-bands" id="dbg-bands"></div>
+    <div class="dbg-row">
+      <button class="dbg-btn danger" id="dbg-lock-band">锁定频段</button>
+      <span class="tip">显示的频段不一定支持，能成功锁定的频段才算支持</span>
+    </div>
+  </div>
+
+  <div class="dbg-section">
+    <h3>其他操作</h3>
+    <div class="dbg-row">
+      <button class="dbg-btn" data-at="AT+SWSIM=0">切到卡1</button>
+      <button class="dbg-btn" data-at="AT+SWSIM=1">切到卡2</button>
+      <button class="dbg-btn danger" data-at="AT+RESET" data-confirm="确定重启设备？网络会中断。">重启</button>
+    </div>
+  </div>
+
+  <div class="dbg-section">
+    <h3>自定义 AT 指令</h3>
+    <div class="dbg-row">
+      <input class="dbg-input" id="dbg-custom" placeholder="例如：AT+CGSN 或 AT*BAND?">
+      <button class="dbg-btn primary" id="dbg-send">发送</button>
+    </div>
+  </div>
+
+  <div class="dbg-section">
+    <h3>收发日志</h3>
+    <textarea class="dbg-log" id="dbg-log" readonly placeholder="连接设备后，收发的数据会显示在这里"></textarea>
+    <div class="dbg-row" style="margin-top:8px">
+      <button class="dbg-btn" id="dbg-clear">清空日志</button>
+      <label style="min-width:auto;display:flex;align-items:center;gap:5px;font-size:13px;color:#94a3b8">
+        <input type="checkbox" id="dbg-echo" checked> 显示发送内容
+      </label>
     </div>
   </div>
 </div>
@@ -526,6 +670,301 @@ async function loadContacts() {
 loadContacts();
 startPolling();
 startSSE();
+
+// ==================== 设备调试（Web Serial 直连串口） ====================
+const DBG_EOL = { crlfcrlf: '\r\r\n', crlf: '\r\n', cr: '\r' };
+const DBG_BANDS = [1, 3, 5, 8, 38, 39, 40, 41];
+
+const dbgLogEl = document.getElementById('dbg-log');
+const dbgStatusEl = document.getElementById('dbg-status');
+const dbgHintEl = document.getElementById('dbg-hint');
+const dbgConnectBtn = document.getElementById('dbg-connect');
+const dbgDisconnectBtn = document.getElementById('dbg-disconnect');
+const dbgEchoEl = document.getElementById('dbg-echo');
+
+let dbgPort = null;
+let dbgReader = null;
+let dbgReading = false;
+let dbgPaused = false;
+let dbgHeartbeat = null;
+let dbgRxBuf = '';
+let dbgBandStr = '';
+
+function dbgLog(line) {
+  dbgLogEl.value += line + '\n';
+  dbgLogEl.scrollTop = dbgLogEl.scrollHeight;
+}
+
+function dbgStatus(on) {
+  dbgStatusEl.textContent = on ? '已连接' : '未连接';
+  dbgStatusEl.className = 'dbg-status ' + (on ? 'on' : 'off');
+  dbgDisconnectBtn.disabled = !on;
+  dbgConnectBtn.disabled = on;
+}
+
+// ---------- 暂停 / 恢复短信监控 ----------
+async function dbgPause() {
+  dbgPaused = true;
+  try { await fetch(api('/pause'), { method: 'POST' }); } catch (e) {}
+}
+
+async function dbgResume() {
+  if (dbgHeartbeat) { clearInterval(dbgHeartbeat); dbgHeartbeat = null; }
+  dbgPaused = false;
+  try { await fetch(api('/resume'), { method: 'POST' }); } catch (e) {}
+}
+
+function dbgStartHeartbeat() {
+  if (dbgHeartbeat) clearInterval(dbgHeartbeat);
+  // 每 10 秒续期；轮询服务 60 秒收不到心跳会自动恢复，避免监控永久停摆
+  dbgHeartbeat = setInterval(() => {
+    if (dbgPaused) fetch(api('/pause'), { method: 'POST' }).catch(() => {});
+  }, 10000);
+}
+
+// ---------- 标签切换 ----------
+async function switchTab(name) {
+  const isDebug = (name === 'debug');
+  document.getElementById('sms-app').style.display = isDebug ? 'none' : 'flex';
+  document.getElementById('debug-app').style.display = isDebug ? 'flex' : 'none';
+  document.getElementById('tab-sms').classList.toggle('active', !isDebug);
+  document.getElementById('tab-debug').classList.toggle('active', isDebug);
+
+  if (isDebug) {
+    if (!dbgPaused) {
+      await dbgPause();
+      dbgStartHeartbeat();
+      dbgHintEl.textContent = '已暂停短信监控，串口将在 1 秒内释放，现在可以「连接设备」。';
+      dbgLog('[已暂停短信监控]');
+    }
+  } else {
+    if (dbgPort) await dbgDisconnect(true);
+    if (dbgPaused) { await dbgResume(); dbgLog('[已恢复短信监控]'); }
+  }
+}
+
+document.getElementById('tab-sms').addEventListener('click', () => switchTab('sms'));
+document.getElementById('tab-debug').addEventListener('click', () => switchTab('debug'));
+
+// ---------- 连接 / 断开 ----------
+async function dbgConnect() {
+  if (!('serial' in navigator)) {
+    alert('当前浏览器不支持 Web Serial 串口功能，请使用 Chrome 或 Edge（Chromium 内核）打开本页。');
+    return;
+  }
+  dbgConnectBtn.disabled = true;
+  try {
+    if (!dbgPaused) { await dbgPause(); dbgStartHeartbeat(); }
+    dbgHintEl.textContent = '正在释放串口（短信监控已暂停）...';
+    await new Promise(r => setTimeout(r, 1500));   // 等轮询服务关闭串口
+
+    dbgPort = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById('dbg-baud').value, 10) || 115200;
+    await dbgPort.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
+
+    dbgReading = true;
+    dbgRxBuf = '';
+    dbgReadLoop();
+    dbgStatus(true);
+    dbgLog('[已连接 ' + baud + ' 8N1，短信监控暂停中]');
+    dbgHintEl.textContent = '已连接。切回「短信」标签会自动断开并恢复监控。';
+
+    setTimeout(() => dbgSend('AT'), 200);
+    setTimeout(() => dbgSend('AT+CGSN'), 600);
+    setTimeout(() => dbgSend('AT*MRD_SN?'), 1000);
+    setTimeout(() => dbgSend('AT*MRD_WIFIID?'), 1400);
+    setTimeout(() => dbgSend('AT*BAND?'), 1800);
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    if (e && e.name === 'NotFoundError') {
+      dbgHintEl.textContent = '已取消选择串口。要恢复短信功能，切回「短信」标签即可。';
+    } else {
+      dbgLog('[连接失败] ' + msg);
+      dbgHintEl.textContent = '连接失败：' + msg + '（若提示端口被占用，请等 2 秒后再试）';
+    }
+    await dbgDisconnect(true);
+  } finally {
+    if (!dbgPort) dbgStatus(false);
+  }
+}
+
+async function dbgDisconnect(silent) {
+  dbgReading = false;
+  try { if (dbgReader) await dbgReader.cancel(); } catch (e) {}
+  try { if (dbgPort) await dbgPort.close(); } catch (e) {}
+  dbgReader = null;
+  dbgPort = null;
+  dbgStatus(false);
+  if (!silent) dbgLog('[已断开]');
+  await dbgResume();
+}
+
+dbgConnectBtn.addEventListener('click', dbgConnect);
+dbgDisconnectBtn.addEventListener('click', () => dbgDisconnect(false));
+
+// ---------- 读取循环 ----------
+async function dbgReadLoop() {
+  const dec = new TextDecoder();
+  while (dbgPort && dbgPort.readable && dbgReading) {
+    try {
+      dbgReader = dbgPort.readable.getReader();
+    } catch (e) { break; }
+    try {
+      while (dbgReading) {
+        const { value, done } = await dbgReader.read();
+        if (done) break;
+        if (value && value.length) {
+          const text = dec.decode(value, { stream: true });
+          dbgRxBuf += text;
+          if (dbgRxBuf.length > 40000) dbgRxBuf = dbgRxBuf.slice(-20000);
+          dbgLogEl.value += text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{2,}/g, '\n');
+          if (dbgLogEl.value.length > 60000) dbgLogEl.value = dbgLogEl.value.slice(-40000);
+          dbgLogEl.scrollTop = dbgLogEl.scrollHeight;
+          dbgParse(dbgRxBuf);
+        }
+      }
+    } catch (e) {
+      if (dbgReading) dbgLog('[读取中断] ' + ((e && e.message) || e));
+    } finally {
+      try { dbgReader.releaseLock(); } catch (e) {}
+      dbgReader = null;
+    }
+  }
+  // 设备被拔掉等情况：回收连接并恢复监控
+  if (dbgReading && dbgPort && !dbgPort.readable) {
+    dbgLog('[设备已断开]');
+    await dbgDisconnect(true);
+  }
+}
+
+// ---------- 发送 ----------
+async function dbgSend(cmd) {
+  if (!cmd) return;
+  if (!dbgPort || !dbgPort.writable) { dbgHintEl.textContent = '请先连接设备。'; return; }
+  const eol = DBG_EOL[document.getElementById('dbg-eol').value] || '\r\r\n';
+  try {
+    const w = dbgPort.writable.getWriter();
+    await w.write(new TextEncoder().encode(cmd + eol));
+    w.releaseLock();
+    if (dbgEchoEl.checked) dbgLog('> ' + cmd);
+  } catch (e) {
+    dbgLog('[发送失败] ' + ((e && e.message) || e));
+  }
+}
+
+// ---------- 响应解析 ----------
+function dbgParse(buf) {
+  const pick = (prefix) => {
+    const i = buf.lastIndexOf(prefix);
+    if (i < 0) return null;
+    const m = buf.slice(i + prefix.length).split(/\r|\n/)[0];
+    return m ? m.trim() : null;
+  };
+  let v;
+  if ((v = pick('+CGSN:'))) document.getElementById('dbg-imei').value = v;
+  if ((v = pick('*MRD_SN:'))) document.getElementById('dbg-sn').value = v;
+  if ((v = pick('*MRD_WIFIID:'))) document.getElementById('dbg-mac').value = v.replace(/:/g, '');
+
+  const bi = buf.lastIndexOf('*BAND:');
+  if (bi >= 0) {
+    const line = buf.slice(bi + 6).split(/\r|\n/)[0].trim();
+    if (line) { dbgBandStr = line; dbgShowBand(line); }
+  }
+}
+
+function dbgShowBand(line) {
+  document.getElementById('dbg-band-cur').textContent = line;
+  const parts = line.split(',');
+  const high = parseInt(parts[3], 10);
+  const low = parseInt(parts[4], 10);
+  if (!isNaN(high) || !isNaN(low)) {
+    const checked = [];
+    [38, 39, 40, 41].forEach(b => { if ((high || 0) & Math.pow(2, b - 33)) checked.push(b); });
+    [1, 3, 5, 8].forEach(b => { if ((low || 0) & Math.pow(2, b - 1)) checked.push(b); });
+    document.querySelectorAll('#dbg-bands input').forEach(x => {
+      x.checked = checked.indexOf(parseInt(x.value, 10)) >= 0;
+    });
+  }
+}
+
+// ---------- 频段 ----------
+document.getElementById('dbg-bands').innerHTML = DBG_BANDS.map(b =>
+  '<label><input type="checkbox" value="' + b + '"> LTE B' + b + '</label>'
+).join('');
+
+document.getElementById('dbg-read-band').addEventListener('click', () => dbgSend('AT*BAND?'));
+
+document.getElementById('dbg-lock-band').addEventListener('click', () => {
+  if (!dbgBandStr) { alert('请先点「读取频段」获取当前参数，再锁定。'); return; }
+  const checked = [...document.querySelectorAll('#dbg-bands input:checked')].map(x => parseInt(x.value, 10));
+  if (!checked.length) { alert('请至少勾选一个频段。'); return; }
+  if (!confirm('将锁定：' + checked.map(b => 'B' + b).join(', ') + '\n\n锁定后可能暂时断网，确定执行？')) return;
+  let high = 0, low = 0;
+  checked.forEach(b => {
+    if (b >= 38 && b <= 41) high += Math.pow(2, b - 33);
+    if (b <= 20) low += Math.pow(2, b - 1);
+  });
+  const s = dbgBandStr.split(',');
+  s[3] = high;
+  s[4] = low;
+  dbgSend('AT*BAND=' + s.join(','));
+});
+
+// ---------- 写号（高风险，二次确认） ----------
+document.getElementById('dbg-imei-w').addEventListener('click', () => {
+  const v = document.getElementById('dbg-imei').value.trim();
+  if (!v) { alert('请先填写 IMEI。'); return; }
+  if (!confirm('确定写入 IMEI = ' + v + ' ？\n\n需先「删除」并开启工厂模式；写错可能导致设备无法上网。')) return;
+  dbgSend('AT*MRD_IMEI=W,0,01JAN1970,' + v);
+});
+
+document.getElementById('dbg-sn-w').addEventListener('click', () => {
+  const v = document.getElementById('dbg-sn').value.trim();
+  if (!v) { alert('请先填写 SN。'); return; }
+  if (!confirm('确定写入 SN = ' + v + ' ？\n\n需先「删除」并开启工厂模式。')) return;
+  dbgSend('AT*MRD_SN=W,0,01JAN1970,' + v);
+});
+
+document.getElementById('dbg-mac-w').addEventListener('click', () => {
+  const v = document.getElementById('dbg-mac').value.trim();
+  if (!v) { alert('请先填写 WiFi ID / MAC。'); return; }
+  if (!confirm('确定写入 WiFi ID = ' + v + ' ？\n\n需先「删除」并开启工厂模式。')) return;
+  dbgSend('AT*MRD_WIFIID=W,0,01JAN1970,' + v);
+});
+
+// ---------- 快捷指令按钮（data-at） ----------
+document.querySelectorAll('#debug-app [data-at]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const c = btn.getAttribute('data-confirm');
+    if (c && !confirm(c)) return;
+    dbgSend(btn.getAttribute('data-at'));
+  });
+});
+
+// ---------- 自定义指令 / 日志 ----------
+document.getElementById('dbg-send').addEventListener('click', () => {
+  const v = document.getElementById('dbg-custom').value.trim();
+  if (v) dbgSend(v);
+});
+document.getElementById('dbg-custom').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const v = e.target.value.trim();
+    if (v) dbgSend(v);
+  }
+});
+document.getElementById('dbg-clear').addEventListener('click', () => {
+  dbgLogEl.value = '';
+  dbgRxBuf = '';
+});
+
+// ---------- 关闭页面时恢复监控 ----------
+window.addEventListener('beforeunload', () => {
+  if (dbgPaused) {
+    try { navigator.sendBeacon(api('/resume')); } catch (e) {}
+  }
+});
+
+dbgStatus(false);
 </script>
 </body>
 </html>

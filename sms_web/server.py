@@ -38,6 +38,7 @@ DELETE_Q = os.path.join(BASE, 'delete_queue.json')
 MARKS = os.path.join(BASE, 'read_marks.json')
 CONTACTS = os.path.join(BASE, 'contacts.json')
 RESULT = os.path.join(BASE, 'send_result.json')
+PAUSE = os.path.join(BASE, 'pause.json')
 
 _lock = threading.Lock()
 
@@ -191,6 +192,20 @@ class Handler(SimpleHTTPRequestHandler):
                     else:
                         m.pop(frm, None)
                     write_json(CONTACTS, m)
+                self._json({'ok': True})
+
+            elif path == '/pause':
+                # 进入设备调试：通知轮询服务释放串口（网页端负责周期性续期）
+                write_json(PAUSE, {'paused': True, 'ts': now_ms()})
+                self._json({'ok': True})
+
+            elif path == '/resume':
+                # 退出设备调试：恢复短信监控
+                try:
+                    if os.path.exists(PAUSE):
+                        os.remove(PAUSE)
+                except Exception:
+                    pass
                 self._json({'ok': True})
 
             else:

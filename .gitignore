@@ -6,6 +6,7 @@ sms_web/send_result.json
 sms_web/delete_queue.json
 sms_web/read_marks.json
 sms_web/contacts.json
+sms_web/pause.json
 
 # 临时文件
 *.tmp

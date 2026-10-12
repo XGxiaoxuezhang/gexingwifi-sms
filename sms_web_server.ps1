@@ -28,6 +28,7 @@ $c = @{
     MarksPath    = Join-Path $Root 'read_marks.json'
     ContactsPath = Join-Path $Root 'contacts.json'
     ResultPath   = Join-Path $Root 'send_result.json'
+    PausePath    = Join-Path $Root 'pause.json'
     LogPath      = $WebLog
     Mime         = @{
         '.html' = 'text/html; charset=utf-8'
@@ -215,6 +216,21 @@ $handler = {
             }
             '/send_result' {
                 Send-Bytes $res ([Text.Encoding]::UTF8.GetBytes((Read-TextFile $c.ResultPath '{}'))) 'application/json; charset=utf-8'
+                return
+            }
+            '/pause' {
+                # 进入设备调试：通知轮询服务释放串口（网页端负责周期性续期）
+                if ($method -ne 'POST') { Send-Json $res @{ ok = $false; error = 'method' } 405; return }
+                $now = [int64](([DateTime]::UtcNow - [DateTime]'1970-01-01').TotalMilliseconds)
+                Write-Json $c.PausePath @{ paused = $true; ts = $now }
+                Send-Json $res @{ ok = $true }
+                return
+            }
+            '/resume' {
+                # 退出设备调试：恢复短信监控
+                if ($method -ne 'POST') { Send-Json $res @{ ok = $false; error = 'method' } 405; return }
+                try { if (Test-Path $c.PausePath) { Remove-Item $c.PausePath -Force -ErrorAction SilentlyContinue } } catch {}
+                Send-Json $res @{ ok = $true }
                 return
             }
         }

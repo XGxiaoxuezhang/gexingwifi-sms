@@ -16,6 +16,7 @@ $QueuePath  = Join-Path $WebDir 'send_queue.json'
 $DeletePath = Join-Path $WebDir 'delete_queue.json'
 $ResultPath = Join-Path $WebDir 'send_result.json'
 $MarkPath   = Join-Path $WebDir 'read_marks.json'
+$PausePath  = Join-Path $WebDir 'pause.json'
 $LogPath    = Join-Path $PSScriptRoot 'logs\poll.log'
 
 [Console]::Title = '随身WiFi 短信轮询服务（运行中）'
@@ -221,11 +222,44 @@ function Load-History {
     Write-PollLog "已载入 $($script:smsList.Count) 条历史短信"
 }
 
+# ---------- 设备调试暂停 ----------
+# 网页进入「设备调试」时写入 pause.json（含心跳时间戳），
+# 这里主动释放串口交给浏览器直接使用；
+# 若超过 60 秒没有心跳（例如浏览器被强制关闭），自动恢复监控，避免永久停摆。
+function Test-DebugPaused {
+    if (-not (Test-Path $PausePath)) { return $false }
+    $st = Read-JsonFile $PausePath
+    if ($null -eq $st -or -not $st.paused) { return $false }
+    $ts = 0
+    try { $ts = [int64]$st.ts } catch { $ts = 0 }
+    if ($ts -le 0) { return $false }
+    $now = [int64](([DateTime]::UtcNow - [DateTime]'1970-01-01').TotalMilliseconds)
+    if (($now - $ts) -gt 60000) {
+        Write-PollLog '调试暂停超过 60 秒没有心跳，自动恢复监控' 'WARN'
+        Write-Host '调试暂停超时，自动恢复监控。' -ForegroundColor Yellow
+        Remove-Item $PausePath -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+    return $true
+}
+
 # ---------- 主流程 ----------
 Write-Host "随身WiFi 短信轮询服务启动，端口 $($cfg.port)，每 $($cfg.poll_sec) 秒轮询。" -ForegroundColor Green
 Write-PollLog "轮询服务启动（端口 $($cfg.port)，间隔 $($cfg.poll_sec)s）"
 
 while ($true) {
+    # 设备调试模式：让出串口给浏览器直接使用
+    if (Test-DebugPaused) {
+        if ($script:connected) {
+            Close-SerialPort $script:sp
+            $script:connected = $false
+            Write-PollLog '进入设备调试模式，已释放串口'
+            Write-Host '设备调试模式：已释放串口，等待调试结束...' -ForegroundColor Yellow
+        }
+        Start-Sleep -Milliseconds 500
+        continue
+    }
+
     if ($script:connected) {
         try {
             Poll-NewSMS
@@ -248,5 +282,12 @@ while ($true) {
             continue
         }
     }
-    Start-Sleep -Seconds $cfg.poll_sec
+
+    # 轮询间隔拆成小片，便于快速响应调试暂停（最迟 0.5 秒让出串口）
+    $waited = 0.0
+    while ($waited -lt $cfg.poll_sec) {
+        Start-Sleep -Milliseconds 500
+        $waited += 0.5
+        if (Test-DebugPaused) { break }
+    }
 }
