@@ -196,7 +196,10 @@
   .item .from { font-size: 14.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
   .item.unread .from { color: #93c5fd; }
   .item .num { font-size: 11.5px; color: var(--muted-2); font-weight: 400; }
-  .item .preview { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .item .preview {
+    font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.55;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
   .item .time { font-size: 11.5px; color: var(--muted-2); flex-shrink: 0; align-self: flex-start; margin-top: 3px; }
 
   .empty { display: grid; place-items: center; text-align: center; padding: 76px 20px; gap: 4px; }
@@ -648,14 +651,33 @@ function escapeHtml(t) {
   return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// 部分模块会把长短信的 UDH 用户数据头一起输出（形如 050003CC0201），
+// 直接按 UCS2 解码会让正文开头变成几个乱码字符，这里先剥掉
+function stripSmsUdh(hex) {
+  if (!/^[0-9A-Fa-f]+$/.test(hex) || hex.length < 8) return hex;
+  // 拼接短信标准头：05 00 03 <参考号> <总片数> <片序号>，共 6 字节
+  if (/^050003[0-9A-Fa-f]{6}/.test(hex)) return hex.substr(12);
+  // 其他 UDH（如端口寻址）按首字节声明的长度剥离，并校验剩余部分是否合理
+  const udhl = parseInt(hex.substr(0, 2), 16);
+  if (udhl >= 3 && udhl <= 20) {
+    const rest = hex.substr((1 + udhl) * 2);
+    if (rest.length >= 4 && rest.length % 4 === 0) {
+      const first = parseInt(rest.substr(0, 4), 16);
+      if (first === 0 || (first >= 0x20 && first <= 0x7E) || (first >= 0x3000 && first <= 0xFF65)) return rest;
+    }
+  }
+  return hex;
+}
+
 function decodeUcs2(s) {
   // 纯数字内容可能是明文（如验证码），只有含 A-F 才按 UCS2 解码
-  if (/^[0-9A-Fa-f]+$/.test(s) && s.length > 0 && s.length % 4 === 0 && /[A-Fa-f]/.test(s)) {
+  const hex = stripSmsUdh(s);
+  if (/^[0-9A-Fa-f]+$/.test(hex) && hex.length > 0 && hex.length % 4 === 0 && /[A-Fa-f]/.test(hex)) {
     let r = '';
-    for (let i = 0; i < s.length; i += 4) r += String.fromCharCode(parseInt(s.substr(i, 4), 16));
+    for (let i = 0; i < hex.length; i += 4) r += String.fromCharCode(parseInt(hex.substr(i, 4), 16));
     return r;
   }
-  return s;
+  return hex;
 }
 
 function encodeUcs2(s) {

@@ -186,18 +186,44 @@ function Get-AllSMS($sp) {
 }
 
 # ---------- UCS2 编解码 ----------
+# 剥离长短信的 UDH 用户数据头（形如 050003CC0201）：
+# 部分模块会把它一起输出，导致正文开头出现几个乱码字符
+function Strip-SmsUdh([string]$hex) {
+    if ($hex -notmatch '^[0-9A-Fa-f]+$' -or $hex.Length -lt 8) { return $hex }
+    # 拼接短信标准头：05 00 03 <参考号> <总片数> <片序号>，共 6 字节
+    if ($hex -match '^050003[0-9A-Fa-f]{6}') { return $hex.Substring(12) }
+    # 其他 UDH 按首字节声明的长度剥离，并校验剩余部分是否合理
+    $udhl = 0
+    try { $udhl = [Convert]::ToInt32($hex.Substring(0, 2), 16) } catch { return $hex }
+    if ($udhl -ge 3 -and $udhl -le 20) {
+        $cut = (1 + $udhl) * 2
+        if ($hex.Length -gt $cut) {
+            $rest = $hex.Substring($cut)
+            if ($rest.Length -ge 4 -and ($rest.Length % 4) -eq 0) {
+                $first = -1
+                try { $first = [Convert]::ToInt32($rest.Substring(0, 4), 16) } catch { $first = -1 }
+                if ($first -eq 0 -or ($first -ge 0x20 -and $first -le 0x7E) -or ($first -ge 0x3000 -and $first -le 0xFF65)) {
+                    return $rest
+                }
+            }
+        }
+    }
+    return $hex
+}
+
 # 解码 UCS2(HEX) 中文短信
 # 注意：仅当内容为纯十六进制字符、长度是 4 的倍数、且含有 A-F 字母时才解码。
 # 纯数字内容（如 6 位验证码）可能是明文，若按 HEX 解码会变成乱码。
 function Convert-UCS2([string]$hex) {
-    if ($hex -match '^[0-9A-Fa-f]+$' -and $hex.Length -gt 0 -and ($hex.Length % 4) -eq 0 -and $hex -match '[A-Fa-f]') {
+    $h = Strip-SmsUdh $hex
+    if ($h -match '^[0-9A-Fa-f]+$' -and $h.Length -gt 0 -and ($h.Length % 4) -eq 0 -and $h -match '[A-Fa-f]') {
         $sb = New-Object System.Text.StringBuilder
-        for ($i = 0; $i -lt $hex.Length; $i += 4) {
-            [void]$sb.Append([char][Convert]::ToUInt16($hex.Substring($i, 4), 16))
+        for ($i = 0; $i -lt $h.Length; $i += 4) {
+            [void]$sb.Append([char][Convert]::ToUInt16($h.Substring($i, 4), 16))
         }
         return $sb.ToString()
     }
-    return $hex
+    return $h
 }
 
 # 字符串转 UCS2(HEX)，用于发送中文短信
