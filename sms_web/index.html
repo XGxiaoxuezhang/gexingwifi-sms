@@ -56,6 +56,23 @@
   .char-count { font-size:12px; color:#64748b; }
   .tip { color:#64748b; font-size:12px; }
 
+  /* 写短信 */
+  #compose-view { display:none; flex-direction:column; flex:1; min-height:0; }
+  .compose-body { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:8px; }
+  .compose-body > label { font-size:12px; color:#64748b; margin-top:6px; }
+  .compose-body input, .compose-body textarea { background:#1e293b; border:1px solid #334155; border-radius:10px; color:#e2e8f0; font-size:14px; padding:12px 14px; font-family:inherit; }
+  .compose-body input:focus, .compose-body textarea:focus { outline:none; border-color:#38bdf8; }
+  .compose-body textarea { flex:1; min-height:140px; resize:none; line-height:1.7; }
+  .recent { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:rgba(37,99,235,.18); color:#7dd3fc; border:none; border-radius:999px; padding:6px 13px; font-size:12px; cursor:pointer; transition:background .15s; }
+  .chip:hover { background:rgba(37,99,235,.34); }
+  .compose-bar { display:flex; align-items:center; gap:10px; padding:12px 16px; border-top:1px solid #1e293b; background:#0b1220; }
+  .compose-bar .status { flex:1; font-size:12px; color:#94a3b8; }
+  .fab { position:fixed; right:22px; bottom:22px; z-index:40; width:54px; height:54px; border-radius:18px; border:none; background:#2563eb; cursor:pointer; display:grid; place-items:center; box-shadow:0 10px 24px -8px rgba(37,99,235,.9); transition:transform .15s, background .15s; }
+  .fab:hover { background:#1d4ed8; transform:translateY(-2px); }
+  .fab:active { transform:scale(.97); }
+  .fab svg { width:22px; height:22px; stroke:#fff; fill:none; stroke-width:2; stroke-linecap:round; }
+
   /* 标签页 */
   .tabs { display:flex; gap:4px; padding:0 20px; background:#0b1220; border-bottom:1px solid #1e293b; }
   .tab { background:none; border:none; border-bottom:2px solid transparent; color:#94a3b8; font-size:14px; padding:10px 14px; cursor:pointer; }
@@ -129,7 +146,34 @@
     </div>
   </div>
 </div>
+
+<!-- 写短信（主动发送，不需要先收到对方短信） -->
+<div id="compose-view">
+  <div class="detail-head">
+    <button class="back" id="btn-compose-back">← 返回</button>
+    <div class="meta">
+      <div class="dfrom">写短信</div>
+      <div class="dtime">直接填写号码发送，无需先收到对方短信</div>
+    </div>
+  </div>
+  <div class="compose-body">
+    <label>收件人</label>
+    <input id="compose-to" placeholder="手机号或服务号，例如 10086" inputmode="tel" autocomplete="off">
+    <div class="recent" id="compose-recent"></div>
+    <label>内容</label>
+    <textarea id="compose-text" placeholder="输入短信内容..."></textarea>
+  </div>
+  <div class="compose-bar">
+    <span class="status" id="compose-status"></span>
+    <span class="char-count" id="compose-count">0/70</span>
+    <button class="send-btn" id="btn-compose-send">发送</button>
+  </div>
 </div>
+</div>
+
+<button class="fab" id="btn-compose" title="写短信（主动发送）">
+  <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+</button>
 
 <div id="debug-app">
   <div class="dbg-warn">
@@ -218,6 +262,18 @@
   </div>
 
   <div class="dbg-section">
+    <h3>流量 / 数据用量（视模块支持）</h3>
+    <div class="dbg-row">
+      <button class="dbg-btn" data-at="AT+QGDCNT?">AT+QGDCNT?</button>
+      <button class="dbg-btn" data-at="AT+CGCONTRDP">AT+CGCONTRDP</button>
+      <button class="dbg-btn" data-at="AT+CGDCONT?">AT+CGDCONT?</button>
+    </div>
+    <div class="dbg-row">
+      <span class="tip">AT 标准指令没有流量统计功能。以上是部分模块（如移远 Quectel）的私有指令，不支持会返回 ERROR；随身WiFi 的流量用量一般在设备自带的管理网页（如 192.168.0.1）查看。</span>
+    </div>
+  </div>
+
+  <div class="dbg-section">
     <h3>自定义 AT 指令</h3>
     <div class="dbg-row">
       <input class="dbg-input" id="dbg-custom" placeholder="例如：AT+CGSN 或 AT*BAND?">
@@ -256,6 +312,14 @@ const contactBtn = document.getElementById('btn-contact');
 const deleteBtn = document.getElementById('btn-delete');
 const liveEl = document.getElementById('live');
 const connTip = document.getElementById('conn-tip');
+const composeView = document.getElementById('compose-view');
+const composeTo = document.getElementById('compose-to');
+const composeText = document.getElementById('compose-text');
+const composeStatus = document.getElementById('compose-status');
+const composeCount = document.getElementById('compose-count');
+const composeSendBtn = document.getElementById('btn-compose-send');
+const composeFab = document.getElementById('btn-compose');
+const composeRecent = document.getElementById('compose-recent');
 const soundBtn = document.getElementById('btn-sound');
 
 // ---------- 访问令牌（局域网访问时校验） ----------
@@ -435,6 +499,7 @@ function showDetail(sms) {
   listView.style.display = 'none';
   detailView.style.display = 'flex';
   dBody.scrollTop = 0;
+  syncComposeFab();
 }
 
 function backToList() {
@@ -442,6 +507,7 @@ function backToList() {
   detailView.style.display = 'none';
   listView.style.display = 'block';
   renderList();
+  syncComposeFab();
 }
 
 document.getElementById('btn-back').addEventListener('click', backToList);
@@ -550,7 +616,10 @@ async function sendReply() {
   pollSendResult(id);
 }
 
-async function pollSendResult(id) {
+// statusEl / btnEl 默认是详情页的回复框；写短信界面会传入自己的元素
+async function pollSendResult(id, statusEl, btnEl, onOk) {
+  statusEl = statusEl || sendStatus;
+  btnEl = btnEl || sendBtn;
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 1000));
     try {
@@ -560,27 +629,108 @@ async function pollSendResult(id) {
       const r = data && data[id];
       if (r) {
         if (r.status === 'ok') {
-          sendStatus.textContent = '已发送';
-          sendBtn.className = 'send-btn ok';
+          statusEl.textContent = '已发送';
+          btnEl.className = 'send-btn ok';
+          if (onOk) onOk();
         } else {
-          sendStatus.textContent = '发送失败：' + (r.message || '未知错误');
-          sendBtn.className = 'send-btn fail';
+          statusEl.textContent = '发送失败：' + (r.message || '未知错误');
+          btnEl.className = 'send-btn fail';
         }
-        sendBtn.disabled = false;
+        btnEl.disabled = false;
         sendingId = null;
         return;
       }
     } catch (e) {}
   }
-  sendStatus.textContent = '发送超时，请重试';
-  sendBtn.className = 'send-btn fail';
-  sendBtn.disabled = false;
+  statusEl.textContent = '发送超时，请重试';
+  btnEl.className = 'send-btn fail';
+  btnEl.disabled = false;
   sendingId = null;
 }
 
 sendBtn.addEventListener('click', sendReply);
 replyInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendReply();
+});
+
+// ---------- 写短信（主动发送给任意号码） ----------
+// 悬浮按钮只在「短信标签页 + 列表层」显示
+function syncComposeFab() {
+  const smsVisible = document.getElementById('sms-app').style.display !== 'none';
+  const inList = composeView.style.display !== 'flex' && detailView.style.display !== 'flex';
+  composeFab.style.display = (smsVisible && inList) ? '' : 'none';
+}
+
+// 收件人快捷选择：最近联系过的 6 个号码
+function renderRecent() {
+  const seen = [];
+  smsList.forEach(s => { if (s.from && seen.indexOf(s.from) < 0) seen.push(s.from); });
+  composeRecent.innerHTML = seen.slice(0, 6).map(f =>
+    '<button class="chip" data-to="' + escapeHtml(f) + '">' + escapeHtml(displayName(f)) + '</button>'
+  ).join('');
+}
+
+function updateComposeCount() {
+  const n = composeText.value.length;
+  composeCount.textContent = n > 70 ? n + '/70（将分 ' + Math.ceil(n / 70) + ' 条发送）' : n + '/70';
+  composeCount.style.color = n > 70 ? '#fbbf24' : '#64748b';
+}
+
+function openCompose() {
+  composeTo.value = '';
+  composeText.value = '';
+  composeStatus.textContent = '';
+  composeSendBtn.className = 'send-btn';
+  composeSendBtn.disabled = false;
+  renderRecent();
+  updateComposeCount();
+  listView.style.display = 'none';
+  detailView.style.display = 'none';
+  composeView.style.display = 'flex';
+  syncComposeFab();
+  setTimeout(() => { try { composeTo.focus(); } catch (e) {} }, 60);
+}
+
+function closeCompose() {
+  composeView.style.display = 'none';
+  listView.style.display = 'block';
+  renderList();
+  syncComposeFab();
+}
+
+async function composeSend() {
+  const to = composeTo.value.trim();
+  const body = composeText.value.trim();
+  if (!to) { composeStatus.textContent = '请填写收件人'; composeTo.focus(); return; }
+  if (!body) { composeStatus.textContent = '请填写短信内容'; composeText.focus(); return; }
+  if (composeSendBtn.disabled) return;
+  const id = Date.now() + '';
+  composeSendBtn.disabled = true;
+  composeStatus.textContent = '发送中...（监控每 8 秒处理一次队列）';
+  const r = await postJSON('/send', { id: id, to: to, body: body });
+  if (!r || !r.ok) {
+    composeStatus.textContent = '发送失败：服务器错误';
+    composeSendBtn.className = 'send-btn fail';
+    composeSendBtn.disabled = false;
+    return;
+  }
+  sendingId = id;
+  pollSendResult(id, composeStatus, composeSendBtn, () => {
+    composeText.value = '';
+    updateComposeCount();
+    setTimeout(closeCompose, 900);
+  });
+}
+
+composeFab.addEventListener('click', openCompose);
+document.getElementById('btn-compose-back').addEventListener('click', closeCompose);
+composeSendBtn.addEventListener('click', composeSend);
+composeText.addEventListener('input', updateComposeCount);
+composeRecent.addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  composeTo.value = chip.dataset.to;
+  try { composeText.focus(); } catch (err) {}
 });
 
 // ---------- 数据应用 ----------
@@ -729,6 +879,7 @@ async function switchTab(name) {
   document.getElementById('debug-app').style.display = isDebug ? 'flex' : 'none';
   document.getElementById('tab-sms').classList.toggle('active', !isDebug);
   document.getElementById('tab-debug').classList.toggle('active', isDebug);
+  syncComposeFab();
 
   if (isDebug) {
     if (!dbgPaused) {

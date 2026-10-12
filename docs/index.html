@@ -574,6 +574,18 @@
     </div>
 
     <div class="dbg-section">
+      <h3>流量 / 数据用量（视模块支持）</h3>
+      <div class="dbg-row">
+        <button class="dbg-btn" data-at="AT+QGDCNT?">AT+QGDCNT?</button>
+        <button class="dbg-btn" data-at="AT+CGCONTRDP">AT+CGCONTRDP</button>
+        <button class="dbg-btn" data-at="AT+CGDCONT?">AT+CGDCONT?</button>
+      </div>
+      <div class="dbg-row">
+        <span class="tip">AT 标准指令没有流量统计功能。以上是部分模块（如移远 Quectel）的私有指令，不支持会返回 ERROR；随身WiFi 的流量用量一般在设备自带的管理网页（如 192.168.0.1）查看。</span>
+      </div>
+    </div>
+
+    <div class="dbg-section">
       <h3>自定义 AT 指令</h3>
       <div class="dbg-row">
         <input class="dbg-input" id="dbg-custom" placeholder="例如：AT+CGSN 或 AT*BAND?">
