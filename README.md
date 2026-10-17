@@ -62,7 +62,7 @@
 也可以把 `docs/index.html` 这一个文件放到任意静态托管（GitHub Pages / Netlify / Vercel / Cloudflare Pages）。
 
 - 页面通过浏览器 **Web Serial API 直接访问访客本机的串口** —— 页面可以从互联网加载，但短信数据始终只在本地流转
-- 必须用 **Chrome / Edge**，且通过 **https 或 localhost** 打开（`file://` 下浏览器禁止访问串口）
+- 必须用 **Chromium 内核浏览器**（Chrome / Edge / Opera / Brave / Vivaldi 等；Firefox 与 Safari 不支持），且通过 **https 或 localhost** 打开（`file://` 下浏览器禁止访问串口）
 - 点「连接设备」后浏览器会弹窗询问串口权限，选择设备的 AT 端口；连接后自动读取 SIM 卡短信
 - 功能：短信列表 / 详情 / 回复 / 写短信（发给任意号码）/ 删除、联系人备注、语音播报、AT 调试（设备信息读写、工厂模式、锁频、切卡、重启、自定义指令）
 - 数据：短信每次都从 SIM 卡实时读取；联系人备注存在浏览器 localStorage

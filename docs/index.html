@@ -444,7 +444,7 @@
     <div id="connect-msg"></div>
 
     <div class="notice" id="connect-note">
-      需使用 <b>Chrome / Edge</b> 等 Chromium 内核浏览器，并通过 <b>https 或 localhost</b> 打开本页
+      需使用 <b>Chrome / Edge / Opera</b> 等 Chromium 内核浏览器（Firefox、Safari 不支持），并通过 <b>https 或 localhost</b> 打开本页
       （浏览器安全限制，直接双击 html 文件无法访问串口）。<br>
       串口同一时间只能被一个程序占用，连接前请先关闭其他占用该串口的程序。
     </div>
@@ -871,7 +871,7 @@ async function doConnect() {
   const hasSerial = 'serial' in navigator;
   const hasUsb = 'usb' in navigator;
   if (!hasSerial && !hasUsb) {
-    appendConnectMsg('当前浏览器无法访问串口：电脑请用 Chrome/Edge，手机请用 Android 版 Chrome。');
+    appendConnectMsg('当前浏览器无法访问串口：电脑请用 Chrome / Edge / Opera 等 Chromium 内核浏览器，手机请用 Android 版 Chrome。');
     return;
   }
   $('btn-connect').disabled = true;
@@ -1645,7 +1645,7 @@ function setupConnectHint() {
   const hasUsb = 'usb' in navigator;
   if (hasSerial) return;   // 电脑版沿用默认文案
   if (!hasUsb) {
-    appendConnectMsg('该浏览器无法访问串口：电脑请用 Chrome/Edge，手机请用 Android 版 Chrome。');
+    appendConnectMsg('该浏览器无法访问串口：电脑请用 Chrome / Edge / Opera 等 Chromium 内核浏览器，手机请用 Android 版 Chrome。');
     return;
   }
   $('connect-steps').innerHTML =
@@ -1653,7 +1653,7 @@ function setupConnectHint() {
     '<div class="step"><span class="n">2</span><span>点「连接设备」，在弹窗中选择该设备（通常带 Modem / Serial / AT 字样）</span></div>' +
     '<div class="step"><span class="n">3</span><span>连接后即可收发短信，界面与电脑版完全一致</span></div>';
   $('connect-note').innerHTML =
-    '手机模式（WebUSB）：需使用 <b>Android 版 Chrome</b>，并通过 <b>https</b> 访问本页。<br>' +
+    '手机模式（WebUSB）：需使用支持 WebUSB 的浏览器（<b>Android 版 Chrome 已验证</b>；Edge、三星浏览器等 Chromium 内核浏览器可试），并通过 <b>https</b> 访问本页。<br>' +
     '需要 OTG 转接头，且手机要给设备供电；个别机型供电不足会导致设备反复掉线。<br>' +
     '若连接后没有反应，请到「AT 调试」查看日志里的 USB 接口信息。';
 }
