@@ -909,8 +909,18 @@ async function doConnect() {
     dbgAppendRaw('[已连接 ' + (isUsbMode ? 'USB(WebUSB)' : baud + ' 8N1') + ']\n');
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e);
-    if (e && e.name === 'NotFoundError') appendConnectMsg('已取消选择设备。');
-    else appendConnectMsg('连接失败：' + msg);
+    if (e && e.name === 'NotFoundError') {
+      // NotFoundError 有两种含义：用户主动取消、或系统里根本没有可用设备，必须区分开
+      if (/no compatible|not found|no device|没有/i.test(msg)) {
+        appendConnectMsg(hasSerial
+          ? '没有检测到可用串口。请依次检查：① 数据线是否支持传输（很多线只能充电）；② 设备管理器「端口(COM 和 LPT)」里是否出现新的 COM 口；③ 若显示黄色感叹号说明缺驱动。'
+          : '没有检测到兼容的 USB 设备。请检查：① 手机是否用 OTG 线真正连上了设备；② 设备是否已被系统识别（部分模块需要独立供电）。');
+      } else {
+        appendConnectMsg('已取消选择设备。');
+      }
+    } else {
+      appendConnectMsg('连接失败：' + msg);
+    }
     await doDisconnect();
   } finally {
     $('btn-connect').disabled = false;
