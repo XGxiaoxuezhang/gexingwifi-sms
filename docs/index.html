@@ -424,7 +424,7 @@
     <h2>连接短信设备</h2>
     <p class="cc-sub">浏览器直连串口，短信数据不经过任何服务器</p>
 
-    <div class="steps">
+    <div class="steps" id="connect-steps">
       <div class="step"><span class="n">1</span><span>用数据线连接随身WiFi，确认它出现在 <b>设备管理器 → 端口</b></span></div>
       <div class="step"><span class="n">2</span><span>选择波特率（一般 <b>115200</b>），点「连接设备」</span></div>
       <div class="step"><span class="n">3</span><span>在浏览器弹窗中选择该设备的 <b>AT 端口</b></span></div>
@@ -443,7 +443,7 @@
     </div>
     <div id="connect-msg"></div>
 
-    <div class="notice">
+    <div class="notice" id="connect-note">
       需使用 <b>Chrome / Edge</b> 等 Chromium 内核浏览器，并通过 <b>https 或 localhost</b> 打开本页
       （浏览器安全限制，直接双击 html 文件无法访问串口）。<br>
       串口同一时间只能被一个程序占用，连接前请先关闭其他占用该串口的程序。
@@ -847,9 +847,15 @@ async function readLoop() {
 }
 
 async function writeRaw(s) {
+  const bytes = new TextEncoder().encode(s);
+  if (isUsbMode) {
+    if (!usbDevice) throw new Error('USB 未连接');
+    await usbDevice.transferOut(usbOutEp, bytes);
+    return;
+  }
   if (!port || !port.writable) throw new Error('串口未连接');
   const w = port.writable.getWriter();
-  try { await w.write(new TextEncoder().encode(s)); } finally { w.releaseLock(); }
+  try { await w.write(bytes); } finally { w.releaseLock(); }
 }
 
 // 发送一条 AT 指令并等待 OK/ERROR；返回响应文本或 null（超时）
@@ -862,19 +868,28 @@ async function sendAT(cmd, timeoutMs) {
 }
 
 async function doConnect() {
-  if (!('serial' in navigator)) {
-    appendConnectMsg('当前浏览器不支持 Web Serial，请使用 Chrome 或 Edge。');
+  const hasSerial = 'serial' in navigator;
+  const hasUsb = 'usb' in navigator;
+  if (!hasSerial && !hasUsb) {
+    appendConnectMsg('当前浏览器无法访问串口：电脑请用 Chrome/Edge，手机请用 Android 版 Chrome。');
     return;
   }
   $('btn-connect').disabled = true;
-  appendConnectMsg('正在打开串口...');
+  appendConnectMsg(hasSerial ? '正在打开串口...' : '请在弹出的窗口中选择 USB 设备...');
   try {
-    port = await navigator.serial.requestPort();
     const baud = parseInt($('baud').value, 10) || 115200;
-    await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
-    reading = true;
-    rxBuf = '';
-    readLoop();
+    if (hasSerial) {
+      isUsbMode = false;
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: baud, dataBits: 8, stopBits: 1, parity: 'none' });
+      reading = true;
+      rxBuf = '';
+      readLoop();
+    } else {
+      isUsbMode = true;
+      await openUsbDevice(baud);
+      rxBuf = '';
+    }
 
     connected = true;
     // 初始化：文本模式 + GSM 字符集 + 开启短信状态报告（用于确认是否真的送达）
@@ -891,10 +906,10 @@ async function doConnect() {
     await loadAllSms();
     startPoll();
     syncFab();
-    dbgAppendRaw('[已连接 ' + baud + ' 8N1]\n');
+    dbgAppendRaw('[已连接 ' + (isUsbMode ? 'USB(WebUSB)' : baud + ' 8N1') + ']\n');
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e);
-    if (e && e.name === 'NotFoundError') appendConnectMsg('已取消选择串口。');
+    if (e && e.name === 'NotFoundError') appendConnectMsg('已取消选择设备。');
     else appendConnectMsg('连接失败：' + msg);
     await doDisconnect();
   } finally {
@@ -905,10 +920,19 @@ async function doConnect() {
 async function doDisconnect() {
   reading = false;
   stopPoll();
-  try { if (reader) await reader.cancel(); } catch (e) {}
-  try { if (port) await port.close(); } catch (e) {}
-  reader = null;
-  port = null;
+  if (isUsbMode) {
+    usbReading = false;
+    try { if (usbDevice) await usbDevice.close(); } catch (e) {}
+    usbDevice = null;
+    usbInEp = null;
+    usbOutEp = null;
+    isUsbMode = false;
+  } else {
+    try { if (reader) await reader.cancel(); } catch (e) {}
+    try { if (port) await port.close(); } catch (e) {}
+    reader = null;
+    port = null;
+  }
   connected = false;
   setBadge(false);
   $('app').style.display = 'none';
@@ -918,6 +942,113 @@ async function doDisconnect() {
 
 $('btn-connect').addEventListener('click', doConnect);
 $('btn-disconnect').addEventListener('click', () => doDisconnect());
+
+// ==================== WebUSB（Android 手机用） ====================
+// 手机浏览器不支持 Web Serial，但 Android 版 Chrome 支持 WebUSB。
+// 这里直接用 USB 接口和设备的 CDC-ACM 串口通信，界面与电脑版完全一致。
+let isUsbMode = false;
+let usbDevice = null;
+let usbInEp = null;
+let usbOutEp = null;
+let usbReading = false;
+
+async function openUsbDevice(baud) {
+  const device = await navigator.usb.requestDevice({ filters: [] });
+  await device.open();
+  if (device.configuration === null) {
+    await device.selectConfiguration(1);
+  }
+
+  const intfs = device.configuration.interfaces || [];
+  let dataIntf = null;
+  let ctrlIntf = null;
+  for (const it of intfs) {
+    const alt = it.alternate;
+    if (alt.interfaceClass === 10) dataIntf = it;   // CDC 数据接口
+    if (alt.interfaceClass === 2) ctrlIntf = it;    // CDC 控制接口
+  }
+  if (!dataIntf) {
+    // 有些设备用自定义接口，退一步找任意带 bulk 收发的接口
+    for (const it of intfs) {
+      const alt = it.alternate;
+      const hasIn = alt.endpoints.some(e => e.direction === 'in' && e.type === 'bulk');
+      const hasOut = alt.endpoints.some(e => e.direction === 'out' && e.type === 'bulk');
+      if (hasIn && hasOut) { dataIntf = it; break; }
+    }
+  }
+  if (!dataIntf) {
+    try { await device.close(); } catch (e) {}
+    throw new Error('设备上没有找到可用的串口接口');
+  }
+
+  await device.claimInterface(dataIntf.interfaceNumber);
+  if (ctrlIntf) {
+    try { await device.claimInterface(ctrlIntf.interfaceNumber); } catch (e) {}
+    try { await setupCdcAcm(device, ctrlIntf.interfaceNumber, baud); } catch (e) {}
+  }
+
+  const alt = dataIntf.alternate;
+  const inEp = alt.endpoints.find(e => e.direction === 'in' && e.type === 'bulk');
+  const outEp = alt.endpoints.find(e => e.direction === 'out' && e.type === 'bulk');
+  if (!inEp || !outEp) {
+    try { await device.close(); } catch (e) {}
+    throw new Error('串口接口缺少收发端点');
+  }
+
+  usbDevice = device;
+  usbInEp = inEp.endpointNumber;
+  usbOutEp = outEp.endpointNumber;
+  usbReading = true;
+  usbReadLoop();
+
+  dbgAppendRaw('[USB 已连接] VID=' + device.vendorId.toString(16) + ' PID=' + device.productId.toString(16) + '\n');
+  dbgAppendRaw('[接口 ' + dataIntf.interfaceNumber + '  in=' + usbInEp + '  out=' + usbOutEp + ']\n');
+}
+
+// CDC-ACM 标准控制请求：设置线路编码（波特率/8N1）并置位 DTR/RTS
+async function setupCdcAcm(device, intfNum, baud) {
+  const buf = new ArrayBuffer(7);
+  const dv = new DataView(buf);
+  dv.setUint32(0, baud, true);
+  dv.setUint8(4, 0);   // 1 停止位
+  dv.setUint8(5, 0);   // 无校验
+  dv.setUint8(6, 8);   // 8 数据位
+  try {
+    await device.controlTransferOut({
+      requestType: 'class', recipient: 'interface',
+      request: 0x20, value: 0, index: intfNum
+    }, buf);
+  } catch (e) {}
+  try {
+    await device.controlTransferOut({
+      requestType: 'class', recipient: 'interface',
+      request: 0x22, value: 0x03, index: intfNum
+    });
+  } catch (e) {}
+}
+
+async function usbReadLoop() {
+  const dec = new TextDecoder();
+  while (usbReading && usbDevice) {
+    try {
+      const r = await usbDevice.transferIn(usbInEp, 64);
+      if (r.status !== 'ok' || !r.data || !r.data.byteLength) continue;
+      const text = dec.decode(new Uint8Array(r.data.buffer), { stream: true });
+      onRx(text);
+      cdsBuf += text;
+      if (cdsBuf.length > 4000) cdsBuf = cdsBuf.slice(-2000);
+      if (cdsWatcher) tryFinishCds();
+      dbgAppendRaw(text);
+    } catch (e) {
+      if (usbReading) dbgAppendRaw('\n[USB 读取中断] ' + ((e && e.message) || e) + '\n');
+      break;
+    }
+  }
+  if (usbReading) {
+    appendConnectMsg('USB 设备已断开，请重新连接。');
+    await doDisconnect();
+  }
+}
 
 // ==================== 短信 ====================
 function parseCmgl(buf) {
@@ -1508,6 +1639,25 @@ function appendConnectMsg(msg) {
   $('connect-msg').textContent = msg || '';
 }
 
+// 按浏览器能力显示对应指引：电脑走 Web Serial，Android 手机走 WebUSB
+function setupConnectHint() {
+  const hasSerial = 'serial' in navigator;
+  const hasUsb = 'usb' in navigator;
+  if (hasSerial) return;   // 电脑版沿用默认文案
+  if (!hasUsb) {
+    appendConnectMsg('该浏览器无法访问串口：电脑请用 Chrome/Edge，手机请用 Android 版 Chrome。');
+    return;
+  }
+  $('connect-steps').innerHTML =
+    '<div class="step"><span class="n">1</span><span>用 <b>OTG 转接线</b>把随身WiFi 接到手机</span></div>' +
+    '<div class="step"><span class="n">2</span><span>点「连接设备」，在弹窗中选择该设备（通常带 Modem / Serial / AT 字样）</span></div>' +
+    '<div class="step"><span class="n">3</span><span>连接后即可收发短信，界面与电脑版完全一致</span></div>';
+  $('connect-note').innerHTML =
+    '手机模式（WebUSB）：需使用 <b>Android 版 Chrome</b>，并通过 <b>https</b> 访问本页。<br>' +
+    '需要 OTG 转接头，且手机要给设备供电；个别机型供电不足会导致设备反复掉线。<br>' +
+    '若连接后没有反应，请到「AT 调试」查看日志里的 USB 接口信息。';
+}
+
 loadLocal();
 pickChineseVoice();
 if ('speechSynthesis' in window) {
@@ -1517,10 +1667,8 @@ $('btn-sound').textContent = soundOn ? '语音：开' : '语音：关';
 $('btn-sound').className = 'icon-btn' + (soundOn ? ' on' : '');
 setBadge(false);
 renderList();
+setupConnectHint();
 
-if (!('serial' in navigator)) {
-  appendConnectMsg('当前浏览器不支持 Web Serial 串口功能，请改用 Chrome 或 Edge（Chromium 内核）打开本页。');
-}
 if (location.protocol === 'file:') {
   appendConnectMsg('当前是 file:// 方式打开，浏览器不允许访问串口。请通过 https 或 http://localhost 访问本页。');
 }
